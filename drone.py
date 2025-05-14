@@ -4,7 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
 
 # Constants
-g, m, dt, L = 9.81, 1.0, 0.02, 0.6
+g, m, dt, L = 9.81, 0.5, 0.02, 0.6
 state = np.array([0, 0, 0, 0, 0, 0], dtype=float)
 waypoints = [np.array([0, 0, 2]), np.array([2, 0, 2]), np.array([2, 2, 3]), np.array([0, 2, 2]), np.array([0, 0, 0])]
 wp_index = 0
@@ -13,7 +13,7 @@ speed_history, time_vals = [], []
 
 def control_input(state, target):
     pos, vel = state[:3], state[3:]
-    kp, kd = 3.0, 2.0
+    kp, kd = 12.0, 8.0
     acc_des = kp * (target - pos) - kd * vel
     acc_des[2] += g
     thrust_total = m * acc_des[2]
@@ -63,10 +63,21 @@ ax2.set_title("Rotor Speeds Over Time")
 ax2.legend()
 
 def animate(i):
-    global state, wp_index
+    global state, wp_index, rotor_speeds
 
     t = i * dt
     target = waypoints[wp_index]
+
+    # Check if the drone is near the last waypoint and on the ground
+    if wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
+        rotor_speeds[:] = 0  # Stop the rotors
+
+        # Update rotor speed text to show 0 RPM
+        for j in range(4):
+            rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
+
+        return  # Stop updating the state
+
     u = control_input(state, target)
     state[:] = update_state(state, u)
     trajectory.append(state[:3].copy())
