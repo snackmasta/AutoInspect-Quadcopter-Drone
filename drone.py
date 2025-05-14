@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
+import logging
 
 # Constants
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
@@ -15,6 +16,20 @@ speed_history, time_vals = [], []
 startup_rpm = 4000
 spinup_step = 100  # RPM per frame
 spinup_done = False
+
+# Set up logging to both file and console
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# File handler
+file_handler = logging.FileHandler('waypoint_rotor_speeds.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+logger.addHandler(file_handler)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+logger.addHandler(console_handler)
 
 def control_input(state, target):
     pos, vel = state[:3], state[3:]
@@ -74,6 +89,11 @@ def moving_average(data, window_size=5):
         return data
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
+# Add a list to store waypoint reach times
+waypoint_reach_times = []
+# Add a set to track already plotted waypoint times
+plotted_waypoint_times = set()
+
 def animate(i):
     global state, wp_index, rotor_speeds, spinup_done
 
@@ -104,6 +124,16 @@ def animate(i):
 
             if np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
                 wp_index += 1
+                waypoint_reach_times.append(t)  # Record the time when the waypoint is reached
+
+                # Format rotor speeds in list style
+                formatted_speeds = [f"R{j+1} = {rotor_speeds[j]:.3f} RPM" for j in range(4)]
+                formatted_speeds_str = ", ".join(formatted_speeds)
+
+                # Log and print rotor speeds
+                log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. Rotor Speeds: {formatted_speeds_str}"
+                logger.info(log_message)
+                print(log_message)
 
     # --- Update 3D elements ---
     if trajectory:
@@ -143,6 +173,13 @@ def animate(i):
         ax2.set_xlim(0, t + 5)
     for j in range(4):
         speed_lines[j].set_data(time_vals[:len(filtered_speeds)], filtered_speeds[:, j])
+
+    # Add vertical lines for waypoint reach times (only once per waypoint)
+    for waypoint_time in waypoint_reach_times:
+        if waypoint_time not in plotted_waypoint_times:
+            ax2.axvline(x=waypoint_time, color='red', linestyle='--', label='Waypoint Reached')
+            plotted_waypoint_times.add(waypoint_time)
+
     ax2.relim()
     ax2.autoscale_view()
 
