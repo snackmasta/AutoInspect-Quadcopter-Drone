@@ -52,6 +52,9 @@ center_dot = ax.scatter([], [], [], c='green', s=80)
 target_dot = ax.scatter([], [], [], c='orange', marker='x', s=80)
 rpm_texts = [ax.text(0, 0, 0, '') for _ in range(4)]
 
+# Add a list to hold rotor number text objects
+rotor_number_texts = [ax.text(0, 0, 0, f'{i+1}', color='red') for i in range(4)]
+
 # --- Rotor Speed Plot ---
 fig2, ax2 = plt.subplots()
 speed_lines = [ax2.plot([], [], label=f'Rotor {i+1}')[0] for i in range(4)]
@@ -108,6 +111,10 @@ def animate(i):
         rpm_texts[j].set_position((rotors[j][0], rotors[j][1]))
         rpm_texts[j].set_3d_properties(rotors[j][2]+0.1)
         rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
+
+        # Update rotor number positions
+        rotor_number_texts[j].set_position((rotors[j][0], rotors[j][1]))
+        rotor_number_texts[j].set_3d_properties(rotors[j][2] - 0.2)
 
     rotor_dots._offsets3d = (rotors[:, 0], rotors[:, 1], rotors[:, 2])
     center_dot._offsets3d = ([center[0]], [center[1]], [center[2]])
