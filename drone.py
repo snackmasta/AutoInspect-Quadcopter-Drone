@@ -8,12 +8,17 @@ g, m, dt, L = 9.81, 0.5, 0.02, 0.6
 state = np.array([0, 0, 0, 0, 0, 0], dtype=float)
 waypoints = [np.array([0, 0, 2]), np.array([2, 0, 2]), np.array([2, 2, 3]), np.array([0, 2, 2]), np.array([0, 0, 0])]
 wp_index = 0
-rotor_speeds = np.array([4000.0] * 4)
+rotor_speeds = np.array([0.0] * 4)
 speed_history, time_vals = [], []
+
+# Spin-up variables
+startup_rpm = 4000
+spinup_step = 100  # RPM per frame
+spinup_done = False
 
 def control_input(state, target):
     pos, vel = state[:3], state[3:]
-    kp, kd = 12.0, 8.0
+    kp, kd = 6.0, 4.0
     acc_des = kp * (target - pos) - kd * vel
     acc_des[2] += g
     thrust_total = m * acc_des[2]
@@ -49,56 +54,62 @@ traj_line, = ax.plot([], [], [], 'b')
 rotor_lines = [ax.plot([], [], [], 'k-')[0] for _ in range(4)]
 rotor_dots = ax.scatter([], [], [], c='r', s=50)
 center_dot = ax.scatter([], [], [], c='green', s=80)
-target_dot = ax.scatter([], [], [], c='orange', marker='x', s=80)
+target_dot = ax.scatter([], [], [], c='green', marker='x', s=80)
 rpm_texts = [ax.text(0, 0, 0, '') for _ in range(4)]
-
-# Add a list to hold rotor number text objects
 rotor_number_texts = [ax.text(0, 0, 0, f'{i+1}', color='red') for i in range(4)]
+status_text = ax.text2D(0.05, 0.95, "Status: Spinning Up", transform=ax.transAxes, fontsize=12, color='blue')
 
 # --- Rotor Speed Plot ---
 fig2, ax2 = plt.subplots()
 speed_lines = [ax2.plot([], [], label=f'Rotor {i+1}')[0] for i in range(4)]
 ax2.set_xlim(0, 10)
-ax2.set_ylim(2000, 7000)
+ax2.set_ylim(-7000, 7000)
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("RPM")
 ax2.set_title("Rotor Speeds Over Time")
 ax2.legend()
 
-# Add a function for the moving average filter
 def moving_average(data, window_size=5):
     if len(data) < window_size:
-        return data  # Not enough data to apply the filter
+        return data
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
-# Modify the animate function to apply the filter
 def animate(i):
-    global state, wp_index, rotor_speeds
+    global state, wp_index, rotor_speeds, spinup_done
 
     t = i * dt
-    target = waypoints[wp_index]
 
-    # Check if the drone is near the last waypoint and on the ground
-    if wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
-        rotor_speeds[:] = 0  # Stop the rotors
+    if not spinup_done:
+        # Spin-up phase
+        rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
+        if np.all(rotor_speeds >= startup_rpm):
+            spinup_done = True
+            status_text.set_text("Status: Navigating")
+        else:
+            status_text.set_text("Status: Spinning Up")
+    else:
+        target = waypoints[wp_index]
 
-        # Update rotor speed text to show 0 RPM
-        for j in range(4):
-            rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
+        if wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
+            rotor_speeds[:] = np.maximum(rotor_speeds - 50, 0)
+            for j in range(4):
+                rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
+            if np.all(rotor_speeds == 0):
+                status_text.set_text("Status: Landed")
+                return
+        else:
+            u = control_input(state, target)
+            state[:] = update_state(state, u)
+            trajectory.append(state[:3].copy())
 
-        return  # Stop updating the state
-
-    u = control_input(state, target)
-    state[:] = update_state(state, u)
-    trajectory.append(state[:3].copy())
-
-    if np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
-        wp_index += 1
+            if np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
+                wp_index += 1
 
     # --- Update 3D elements ---
-    traj = np.array(trajectory)
-    traj_line.set_data(traj[:, 0], traj[:, 1])
-    traj_line.set_3d_properties(traj[:, 2])
+    if trajectory:
+        traj = np.array(trajectory)
+        traj_line.set_data(traj[:, 0], traj[:, 1])
+        traj_line.set_3d_properties(traj[:, 2])
 
     center = state[:3]
     rotors = rotor_positions(center)
@@ -112,26 +123,25 @@ def animate(i):
         rpm_texts[j].set_3d_properties(rotors[j][2]+0.1)
         rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
 
-        # Update rotor number positions
         rotor_number_texts[j].set_position((rotors[j][0], rotors[j][1]))
         rotor_number_texts[j].set_3d_properties(rotors[j][2] - 0.2)
 
     rotor_dots._offsets3d = (rotors[:, 0], rotors[:, 1], rotors[:, 2])
     center_dot._offsets3d = ([center[0]], [center[1]], [center[2]])
-    target_dot._offsets3d = ([target[0]], [target[1]], [target[2]])
+    if spinup_done:
+        target = waypoints[wp_index]
+        target_dot._offsets3d = ([target[0]], [target[1]], [target[2]])
 
-    # --- Rotor Speeds ---
+    # --- Rotor Speeds Plot ---
     time_vals.append(t)
     speed_history.append(rotor_speeds.copy())
     speeds = np.array(speed_history)
 
-    # Apply moving average filter to the rotor speeds
     filtered_speeds = np.array([moving_average(speeds[:, j]) for j in range(4)]).T
 
     if t > ax2.get_xlim()[1]:
         ax2.set_xlim(0, t + 5)
     for j in range(4):
-        # Use filtered speeds for plotting
         speed_lines[j].set_data(time_vals[:len(filtered_speeds)], filtered_speeds[:, j])
     ax2.relim()
     ax2.autoscale_view()
