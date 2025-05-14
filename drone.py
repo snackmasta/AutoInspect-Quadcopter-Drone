@@ -56,12 +56,19 @@ rpm_texts = [ax.text(0, 0, 0, '') for _ in range(4)]
 fig2, ax2 = plt.subplots()
 speed_lines = [ax2.plot([], [], label=f'Rotor {i+1}')[0] for i in range(4)]
 ax2.set_xlim(0, 10)
-ax2.set_ylim(3000, 7000)
+ax2.set_ylim(2000, 7000)
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("RPM")
 ax2.set_title("Rotor Speeds Over Time")
 ax2.legend()
 
+# Add a function for the moving average filter
+def moving_average(data, window_size=5):
+    if len(data) < window_size:
+        return data  # Not enough data to apply the filter
+    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
+
+# Modify the animate function to apply the filter
 def animate(i):
     global state, wp_index, rotor_speeds
 
@@ -110,10 +117,15 @@ def animate(i):
     time_vals.append(t)
     speed_history.append(rotor_speeds.copy())
     speeds = np.array(speed_history)
+
+    # Apply moving average filter to the rotor speeds
+    filtered_speeds = np.array([moving_average(speeds[:, j]) for j in range(4)]).T
+
     if t > ax2.get_xlim()[1]:
         ax2.set_xlim(0, t + 5)
     for j in range(4):
-        speed_lines[j].set_data(time_vals, speeds[:, j])
+        # Use filtered speeds for plotting
+        speed_lines[j].set_data(time_vals[:len(filtered_speeds)], filtered_speeds[:, j])
     ax2.relim()
     ax2.autoscale_view()
 
