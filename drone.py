@@ -8,6 +8,18 @@ import logging
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
 state = np.array([0, 0, 0, 0, 0, 0], dtype=float)
 waypoints = [np.array([0, 0, 2]), np.array([2, 0, 2]), np.array([2, 2, 3]), np.array([0, 2, 2]), np.array([0, 0, 0])]
+
+# Generate sub-waypoints (6 stops per segment, including start and end)
+all_waypoints = []
+for i in range(len(waypoints) - 1):
+    for j in range(6):  # Change from 5 to 6
+        t = j / 5  # 0, 0.2, 0.4, 0.6, 0.8, 1
+        sub_wp = waypoints[i] * (1 - t) + waypoints[i + 1] * t
+        all_waypoints.append(sub_wp)
+# Remove duplicates (the last of one segment is the first of the next)
+all_waypoints = [all_waypoints[0]] + [all_waypoints[i] for i in range(1, len(all_waypoints)) if not np.allclose(all_waypoints[i], all_waypoints[i-1])]
+
+waypoints = all_waypoints  # Use sub-waypoints for navigation
 wp_index = 0
 rotor_speeds = np.array([0.0] * 4)
 speed_history, time_vals = [], []
@@ -60,6 +72,20 @@ ax.set_ylabel('Y')
 ax.set_zlabel('Z')
 ax.set_title("Quadcopter in 3D")
 
+# Plot yellow markers for all sub-waypoints
+wps = np.array(waypoints)
+ax.scatter(wps[:, 0], wps[:, 1], wps[:, 2], c='yellow', s=60, marker='o', label='Sub-waypoints')
+
+# Plot blue markers for the 5 main waypoints
+main_waypoints = np.array([
+    [0, 0, 2],
+    [2, 0, 2],
+    [2, 2, 3],
+    [0, 2, 2],
+    [0, 0, 0]
+])
+ax.scatter(main_waypoints[:, 0], main_waypoints[:, 1], main_waypoints[:, 2], c='blue', s=80, marker='o', label='Main waypoints')
+
 trajectory = []
 traj_line, = ax.plot([], [], [], 'b')
 rotor_lines = [ax.plot([], [], [], 'k-')[0] for _ in range(4)]
@@ -73,7 +99,7 @@ status_text = ax.text2D(0.05, 0.95, "Status: Spinning Up", transform=ax.transAxe
 # --- Rotor Speed Plot ---
 fig2, ax2 = plt.subplots()
 speed_lines = [ax2.plot([], [], label=f'Rotor {i+1}')[0] for i in range(4)]
-ax2.set_xlim(0, 10)
+ax2.set_xlim(0, 20)
 ax2.set_ylim(-7000, 7000)
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("RPM")
@@ -91,7 +117,16 @@ plotted_waypoint_times = set()
 def animate(i):
     global state, wp_index, rotor_speeds, spinup_done
 
-    t = i * dt
+    # Persistent time accumulator
+    if not hasattr(animate, "t"):
+        animate.t = 0
+    else:
+        animate.t += dt
+    t = animate.t
+
+    # Persistent stop timer for sub-waypoint pausing
+    if not hasattr(animate, "pause_until"):
+        animate.pause_until = None
 
     if not spinup_done:
         rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
@@ -102,7 +137,22 @@ def animate(i):
             status_text.set_text("Status: Spinning Up")
     else:
         target = waypoints[wp_index]
-        if wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
+        # Pause at each sub-waypoint for 0.1s
+        if animate.pause_until is not None:
+            if t < animate.pause_until:
+                # Hold position, do not update state
+                pass
+            else:
+                animate.pause_until = None
+        elif np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
+            wp_index += 1
+            waypoint_reach_times.append(t)
+            formatted_speeds = [f"R{j+1} = {rotor_speeds[j]:.3f} RPM" for j in range(4)]
+            pos_str = f"Pos = ({state[0]:.3f}, {state[1]:.3f}, {state[2]:.3f})"
+            log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. {pos_str}. Rotor Speeds: {', '.join(formatted_speeds)}"
+            logger.info(log_message)
+            animate.pause_until = t + 0.1  # Pause for 0.1 seconds
+        elif wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
             rotor_speeds[:] = np.maximum(rotor_speeds - 50, 0)
             for j in range(4):
                 rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
@@ -113,13 +163,6 @@ def animate(i):
             u = control_input(state, target)
             state[:] = update_state(state, u)
             trajectory.append(state[:3].copy())
-
-            if np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
-                wp_index += 1
-                waypoint_reach_times.append(t)
-                formatted_speeds = [f"R{j+1} = {rotor_speeds[j]:.3f} RPM" for j in range(4)]
-                log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. Rotor Speeds: {', '.join(formatted_speeds)}"
-                logger.info(log_message)
 
     # --- Update 3D Elements ---
     if trajectory:
@@ -151,32 +194,38 @@ def animate(i):
     # --- Rotor Speeds Plot ---
     time_vals.append(t)
     speed_history.append(rotor_speeds.copy())
+
     speeds = np.array(speed_history)
-    filtered_speeds = np.array([moving_average(speeds[:, j]) for j in range(4)]).T
+    times_trimmed = time_vals[-len(speeds):]  # Ensure length match
 
-    # Dynamically expand X-axis
-    min_time = max(0, time_vals[0])
-    max_time = t
-    ax2.set_xlim(min_time, max_time + 1)
+    # Apply moving average safely
+    window_size = 5
+    if len(speeds) >= window_size:
+        filtered_speeds = np.array([moving_average(speeds[:, j], window_size) for j in range(4)])
+        trimmed_time_vals = time_vals[window_size - 1:]
+    else:
+        filtered_speeds = speeds.T
+        trimmed_time_vals = time_vals
 
-    # Dynamically scale Y-axis based on current speeds
-    min_rpm = np.min(filtered_speeds) if len(filtered_speeds) > 0 else -7000
-    max_rpm = np.max(filtered_speeds) if len(filtered_speeds) > 0 else 7000
-    buffer = 500
-    ax2.set_ylim(min_rpm - buffer, max_rpm + buffer)
-
+    # Update each rotor line
     for j in range(4):
-        speed_lines[j].set_data(time_vals[:len(filtered_speeds)], filtered_speeds[:, j])
+        speed_lines[j].set_data(trimmed_time_vals, filtered_speeds[j])
 
+    ax2.set_xlim(trimmed_time_vals[0] if trimmed_time_vals else 0, t + 1)
+
+    # Scale Y-axis with buffer
+    min_rpm = np.min(filtered_speeds) if filtered_speeds.size else -7000
+    max_rpm = np.max(filtered_speeds) if filtered_speeds.size else 7000
+    ax2.set_ylim(min_rpm - 500, max_rpm + 500)
+
+    # Mark waypoint reach times with vertical lines (only once per time)
     for waypoint_time in waypoint_reach_times:
         if waypoint_time not in plotted_waypoint_times:
-            ax2.axvline(x=waypoint_time, color='red', linestyle='--', label='Waypoint Reached')
+            ax2.axvline(x=waypoint_time, color='red', linestyle='--')
             plotted_waypoint_times.add(waypoint_time)
 
-    ax2.relim()
-    ax2.autoscale_view()
-    fig2.canvas.draw()
-    fig2.canvas.flush_events()
+    ax2.figure.canvas.draw()
+    ax2.figure.canvas.flush_events()
 
 ani = animation.FuncAnimation(fig, animate, frames=500, interval=10, blit=False)
 plt.show()
