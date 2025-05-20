@@ -17,16 +17,12 @@ startup_rpm = 4000
 spinup_step = 100  # RPM per frame
 spinup_done = False
 
-# Set up logging to both file and console
+# Logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-# File handler
 file_handler = logging.FileHandler('waypoint_rotor_speeds.log')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 logger.addHandler(file_handler)
-
-# Console handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 logger.addHandler(console_handler)
@@ -89,9 +85,7 @@ def moving_average(data, window_size=5):
         return data
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
-# Add a list to store waypoint reach times
 waypoint_reach_times = []
-# Add a set to track already plotted waypoint times
 plotted_waypoint_times = set()
 
 def animate(i):
@@ -100,7 +94,6 @@ def animate(i):
     t = i * dt
 
     if not spinup_done:
-        # Spin-up phase
         rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
         if np.all(rotor_speeds >= startup_rpm):
             spinup_done = True
@@ -109,7 +102,6 @@ def animate(i):
             status_text.set_text("Status: Spinning Up")
     else:
         target = waypoints[wp_index]
-
         if wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
             rotor_speeds[:] = np.maximum(rotor_speeds - 50, 0)
             for j in range(4):
@@ -124,18 +116,12 @@ def animate(i):
 
             if np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
                 wp_index += 1
-                waypoint_reach_times.append(t)  # Record the time when the waypoint is reached
-
-                # Format rotor speeds in list style
+                waypoint_reach_times.append(t)
                 formatted_speeds = [f"R{j+1} = {rotor_speeds[j]:.3f} RPM" for j in range(4)]
-                formatted_speeds_str = ", ".join(formatted_speeds)
-
-                # Log and print rotor speeds
-                log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. Rotor Speeds: {formatted_speeds_str}"
+                log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. Rotor Speeds: {', '.join(formatted_speeds)}"
                 logger.info(log_message)
-                print(log_message)
 
-    # --- Update 3D elements ---
+    # --- Update 3D Elements ---
     if trajectory:
         traj = np.array(trajectory)
         traj_line.set_data(traj[:, 0], traj[:, 1])
@@ -150,7 +136,7 @@ def animate(i):
         rotor_lines[j].set_3d_properties([p1[2], p2[2]])
 
         rpm_texts[j].set_position((rotors[j][0], rotors[j][1]))
-        rpm_texts[j].set_3d_properties(rotors[j][2]+0.1)
+        rpm_texts[j].set_3d_properties(rotors[j][2] + 0.1)
         rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
 
         rotor_number_texts[j].set_position((rotors[j][0], rotors[j][1]))
@@ -166,15 +152,22 @@ def animate(i):
     time_vals.append(t)
     speed_history.append(rotor_speeds.copy())
     speeds = np.array(speed_history)
-
     filtered_speeds = np.array([moving_average(speeds[:, j]) for j in range(4)]).T
 
-    if t > ax2.get_xlim()[1]:
-        ax2.set_xlim(0, t + 5)
+    # Dynamically expand X-axis
+    min_time = max(0, time_vals[0])
+    max_time = t
+    ax2.set_xlim(min_time, max_time + 1)
+
+    # Dynamically scale Y-axis based on current speeds
+    min_rpm = np.min(filtered_speeds) if len(filtered_speeds) > 0 else -7000
+    max_rpm = np.max(filtered_speeds) if len(filtered_speeds) > 0 else 7000
+    buffer = 500
+    ax2.set_ylim(min_rpm - buffer, max_rpm + buffer)
+
     for j in range(4):
         speed_lines[j].set_data(time_vals[:len(filtered_speeds)], filtered_speeds[:, j])
 
-    # Add vertical lines for waypoint reach times (only once per waypoint)
     for waypoint_time in waypoint_reach_times:
         if waypoint_time not in plotted_waypoint_times:
             ax2.axvline(x=waypoint_time, color='red', linestyle='--', label='Waypoint Reached')
@@ -182,7 +175,6 @@ def animate(i):
 
     ax2.relim()
     ax2.autoscale_view()
-
     fig2.canvas.draw()
     fig2.canvas.flush_events()
 
