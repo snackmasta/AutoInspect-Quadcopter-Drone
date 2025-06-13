@@ -4,10 +4,21 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
 import logging
 
+# GPU acceleration setup
+try:
+    import cupy as cp
+    print("Using GPU acceleration with CuPy")
+    xp = cp  # Use CuPy for array operations
+    USE_GPU = True
+except ImportError:
+    print("CuPy not available, falling back to NumPy (CPU)")
+    xp = np  # Use NumPy for array operations
+    USE_GPU = False
+
 # Constants
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
-state = np.array([0, 0, 0, 0, 0, 0], dtype=float)
-waypoints = [np.array([0, 0, 2]), np.array([2, 0, 2]), np.array([2, 2, 3]), np.array([0, 2, 2]), np.array([0, 0, 0])]
+state = xp.array([0, 0, 0, 0, 0, 0], dtype=float)
+waypoints = [xp.array([0, 0, 2]), xp.array([2, 0, 2]), xp.array([2, 2, 3]), xp.array([0, 2, 2]), xp.array([0, 0, 0])]
 
 # Generate sub-waypoints (6 stops per segment, including start and end)
 all_waypoints = []
@@ -17,11 +28,11 @@ for i in range(len(waypoints) - 1):
         sub_wp = waypoints[i] * (1 - t) + waypoints[i + 1] * t
         all_waypoints.append(sub_wp)
 # Remove duplicates (the last of one segment is the first of the next)
-all_waypoints = [all_waypoints[0]] + [all_waypoints[i] for i in range(1, len(all_waypoints)) if not np.allclose(all_waypoints[i], all_waypoints[i-1])]
+all_waypoints = [all_waypoints[0]] + [all_waypoints[i] for i in range(1, len(all_waypoints)) if not xp.allclose(all_waypoints[i], all_waypoints[i-1])]
 
 waypoints = all_waypoints  # Use sub-waypoints for navigation
 wp_index = 0
-rotor_speeds = np.array([0.0] * 4)
+rotor_speeds = xp.array([0.0] * 4)
 speed_history, time_vals = [], []
 
 # Spin-up variables
@@ -45,8 +56,14 @@ def control_input(state, target):
     acc_des = kp * (target - pos) - kd * vel
     acc_des[2] += g
     thrust_total = m * acc_des[2]
-    base_speed = np.clip(thrust_total * 1000, 3000, 6000)
-    rotor_speeds[:] = base_speed + np.random.randn(4) * 100
+    base_speed = xp.clip(thrust_total * 1000, 3000, 6000)
+    
+    if USE_GPU:
+        # Generate random noise on GPU
+        rotor_speeds[:] = base_speed + cp.random.randn(4) * 100
+    else:
+        rotor_speeds[:] = base_speed + np.random.randn(4) * 100
+    
     return m * acc_des
 
 def update_state(state, u):
@@ -55,15 +72,23 @@ def update_state(state, u):
     acc[2] -= g
     vel += acc * dt
     pos += vel * dt
-    return np.hstack((pos, vel))
+    return xp.hstack((pos, vel))
 
 def rotor_positions(center):
-    offsets = np.array([[-L/2, L/2, 0], [L/2, L/2, 0], [L/2, -L/2, 0], [-L/2, -L/2, 0]])
+    offsets = xp.array([[-L/2, L/2, 0], [L/2, L/2, 0], [L/2, -L/2, 0], [-L/2, -L/2, 0]])
     return center + offsets
 
-# --- 3D Visualization Setup ---
-fig = plt.figure("3D Quadcopter")
-ax = fig.add_subplot(111, projection='3d')
+def to_cpu(arr):
+    """Convert GPU array to CPU array for matplotlib compatibility"""
+    if USE_GPU and hasattr(arr, 'get'):
+        return arr.get()  # CuPy to NumPy
+    return arr
+
+# --- Combined Visualization Setup ---
+fig = plt.figure("Quadcopter Simulation", figsize=(16, 8))
+
+# 3D Visualization subplot
+ax = fig.add_subplot(121, projection='3d')
 ax.set_xlim(-1, 3)
 ax.set_ylim(-1, 3)
 ax.set_zlim(0, 4)
@@ -73,7 +98,7 @@ ax.set_zlabel('Z')
 ax.set_title("Quadcopter in 3D")
 
 # Plot yellow markers for all sub-waypoints
-wps = np.array(waypoints)
+wps = np.array([to_cpu(wp) for wp in waypoints])
 ax.scatter(wps[:, 0], wps[:, 1], wps[:, 2], c='yellow', s=60, marker='o', label='Sub-waypoints')
 
 # Plot blue markers for the 5 main waypoints
@@ -96,8 +121,8 @@ rpm_texts = [ax.text(0, 0, 0, '') for _ in range(4)]
 rotor_number_texts = [ax.text(0, 0, 0, f'{i+1}', color='red') for i in range(4)]
 status_text = ax.text2D(0.05, 0.95, "Status: Spinning Up", transform=ax.transAxes, fontsize=12, color='blue')
 
-# --- Rotor Speed Plot ---
-fig2, ax2 = plt.subplots()
+# --- Rotor Speed Plot subplot ---
+ax2 = fig.add_subplot(122)
 speed_lines = [ax2.plot([], [], label=f'Rotor {i+1}')[0] for i in range(4)]
 ax2.set_xlim(0, 20)
 ax2.set_ylim(-7000, 7000)
@@ -122,15 +147,13 @@ def animate(i):
         animate.t = 0
     else:
         animate.t += dt
-    t = animate.t
-
-    # Persistent stop timer for sub-waypoint pausing
+    t = animate.t    # Persistent stop timer for sub-waypoint pausing
     if not hasattr(animate, "pause_until"):
         animate.pause_until = None
 
     if not spinup_done:
-        rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
-        if np.all(rotor_speeds >= startup_rpm):
+        rotor_speeds[:] = xp.minimum(rotor_speeds + spinup_step, startup_rpm)
+        if xp.all(rotor_speeds >= startup_rpm):
             spinup_done = True
             status_text.set_text("Status: Navigating")
         else:
@@ -144,25 +167,28 @@ def animate(i):
                 pass
             else:
                 animate.pause_until = None
-        elif np.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
+        elif xp.linalg.norm(state[:3] - target) < 0.2 and wp_index < len(waypoints) - 1:
             wp_index += 1
             waypoint_reach_times.append(t)
-            formatted_speeds = [f"R{j+1} = {rotor_speeds[j]:.3f} RPM" for j in range(4)]
-            pos_str = f"Pos = ({state[0]:.3f}, {state[1]:.3f}, {state[2]:.3f})"
+            rotor_speeds_cpu = to_cpu(rotor_speeds)
+            state_cpu = to_cpu(state)
+            formatted_speeds = [f"R{j+1} = {rotor_speeds_cpu[j]:.3f} RPM" for j in range(4)]
+            pos_str = f"Pos = ({state_cpu[0]:.3f}, {state_cpu[1]:.3f}, {state_cpu[2]:.3f})"
             log_message = f"Waypoint {wp_index} reached at time {t:.2f}s. {pos_str}. Rotor Speeds: {', '.join(formatted_speeds)}"
             logger.info(log_message)
             animate.pause_until = t + 0.1  # Pause for 0.1 seconds
-        elif wp_index == len(waypoints) - 1 and np.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
-            rotor_speeds[:] = np.maximum(rotor_speeds - 50, 0)
+        elif wp_index == len(waypoints) - 1 and xp.linalg.norm(state[:3] - target) < 0.2 and state[2] <= 0.1:
+            rotor_speeds[:] = xp.maximum(rotor_speeds - 50, 0)
+            rotor_speeds_cpu = to_cpu(rotor_speeds)
             for j in range(4):
-                rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
-            if np.all(rotor_speeds == 0):
+                rpm_texts[j].set_text(f'{rotor_speeds_cpu[j]:.0f} RPM')
+            if xp.all(rotor_speeds == 0):
                 status_text.set_text("Status: Landed")
                 return
         else:
             u = control_input(state, target)
             state[:] = update_state(state, u)
-            trajectory.append(state[:3].copy())
+            trajectory.append(to_cpu(state[:3].copy()))
 
     # --- Update 3D Elements ---
     if trajectory:
@@ -170,8 +196,8 @@ def animate(i):
         traj_line.set_data(traj[:, 0], traj[:, 1])
         traj_line.set_3d_properties(traj[:, 2])
 
-    center = state[:3]
-    rotors = rotor_positions(center)
+    center = to_cpu(state[:3])
+    rotors = to_cpu(rotor_positions(state[:3]))
 
     for j in range(4):
         p1, p2 = rotors[j], rotors[(j+1)%4]
@@ -180,7 +206,7 @@ def animate(i):
 
         rpm_texts[j].set_position((rotors[j][0], rotors[j][1]))
         rpm_texts[j].set_3d_properties(rotors[j][2] + 0.1)
-        rpm_texts[j].set_text(f'{rotor_speeds[j]:.0f} RPM')
+        rpm_texts[j].set_text(f'{to_cpu(rotor_speeds)[j]:.0f} RPM')
 
         rotor_number_texts[j].set_position((rotors[j][0], rotors[j][1]))
         rotor_number_texts[j].set_3d_properties(rotors[j][2] - 0.2)
@@ -188,12 +214,10 @@ def animate(i):
     rotor_dots._offsets3d = (rotors[:, 0], rotors[:, 1], rotors[:, 2])
     center_dot._offsets3d = ([center[0]], [center[1]], [center[2]])
     if spinup_done:
-        target = waypoints[wp_index]
-        target_dot._offsets3d = ([target[0]], [target[1]], [target[2]])
-
-    # --- Rotor Speeds Plot ---
+        target = to_cpu(waypoints[wp_index])
+        target_dot._offsets3d = ([target[0]], [target[1]], [target[2]])    # --- Rotor Speeds Plot ---
     time_vals.append(t)
-    speed_history.append(rotor_speeds.copy())
+    speed_history.append(to_cpu(rotor_speeds.copy()))
 
     speeds = np.array(speed_history)
     times_trimmed = time_vals[-len(speeds):]  # Ensure length match
@@ -223,9 +247,6 @@ def animate(i):
         if waypoint_time not in plotted_waypoint_times:
             ax2.axvline(x=waypoint_time, color='red', linestyle='--')
             plotted_waypoint_times.add(waypoint_time)
-
-    ax2.figure.canvas.draw()
-    ax2.figure.canvas.flush_events()
 
 ani = animation.FuncAnimation(fig, animate, frames=500, interval=10, blit=False)
 plt.show()

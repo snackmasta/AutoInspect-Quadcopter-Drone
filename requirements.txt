@@ -1,0 +1,11 @@
+# Core packages
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+# GPU acceleration (CUDA)
+cupy-cuda12x>=12.0.0  # For CUDA 12.x, adjust version as needed
+# Alternative: cupy-cuda11x>=11.0.0  # For CUDA 11.x
+
+# Alternative GPU packages (uncomment if you prefer)
+# jax[cuda12_pip]>=0.4.0  # JAX with CUDA support
+# torch>=2.0.0  # PyTorch with CUDA support
