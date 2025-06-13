@@ -1,14 +1,13 @@
-# Quadcopter Simulation
+# Drone Quadcopter Simulation
 
-This project simulates the behavior of a quadcopter navigating through a series of waypoints in 3D space. The simulation includes real-time visualization of the quadcopter's trajectory, rotor speeds, and waypoint navigation.
+A modular Python simulation of a quadcopter drone navigating 3D waypoints with real-time 3D visualization and rotor speed plots.
 
 ## Features
 
-- **3D Visualization**: Displays the quadcopter's position, trajectory, and rotor positions in a 3D plot.
-- **Waypoint Navigation**: The quadcopter autonomously navigates through predefined waypoints.
-- **Rotor Speed Monitoring**: Plots the rotor speeds over time with real-time updates.
-- **Spin-Up Phase**: Simulates the rotor spin-up process before navigation begins.
-- **Logging**: Logs rotor speeds and waypoint reach times to a file and console.
+- Modular codebase (core, visualization, waypoints, logging)
+- 3D animation of drone and waypoints
+- Rotor speed plotting
+- Logging of waypoint events
 
 ## Requirements
 
@@ -30,7 +29,7 @@ pip install numpy matplotlib
 3. Run the simulation:
 
    ```sh
-   python drone.py
+   python main.py
    ```
 
 4. The simulation will display two windows:
@@ -39,7 +38,12 @@ pip install numpy matplotlib
 
 ## File Structure
 
-- `drone.py`: The main script that contains the simulation logic, visualization setup, and animation.
+- `drone/` - Main package
+  - `core.py` - Drone physics and state
+  - `visualization.py` - 3D/2D plotting and animation
+  - `waypoints.py` - Waypoint generation
+  - `logging_utils.py` - Logging setup
+- `main.py` - Entry point
 
 ## Simulation Details
 

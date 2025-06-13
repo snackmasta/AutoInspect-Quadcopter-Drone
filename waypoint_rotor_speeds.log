@@ -17,3 +17,5 @@
 2025-05-15 02:39:08,880 - Waypoint 2 reached at time 3.24s. Rotor Speeds: R1 = 5008.283 RPM, R2 = 4944.989 RPM, R3 = 4979.717 RPM, R4 = 4886.944 RPM
 2025-05-15 02:39:17,820 - Waypoint 3 reached at time 4.52s. Rotor Speeds: R1 = 4436.233 RPM, R2 = 4512.184 RPM, R3 = 4437.586 RPM, R4 = 4637.743 RPM
 2025-05-15 02:39:26,903 - Waypoint 4 reached at time 5.80s. Rotor Speeds: R1 = 5433.167 RPM, R2 = 5294.151 RPM, R3 = 5558.439 RPM, R4 = 5297.557 RPM
+2025-06-13 21:28:22,924 - Waypoint 1 reached at time 2.04s. Pos = (0.000, 0.000, 1.803). Rotor Speeds: R1 = 4003.394 RPM, R2 = 4154.654 RPM, R3 = 4150.267 RPM, R4 = 4195.477 RPM
+2025-06-13 21:28:27,299 - Waypoint 2 reached at time 2.78s. Pos = (0.207, 0.000, 2.002). Rotor Speeds: R1 = 4845.570 RPM, R2 = 4600.363 RPM, R3 = 4564.765 RPM, R4 = 4774.979 RPM
