@@ -8,7 +8,7 @@ class Environment:
         self.step = step
         self.seed = seed
         self.noise = PerlinNoise(octaves=5, seed=seed)
-        self.scale = 0.12  # Controls terrain feature size
+        self.scale = 0.02  # Controls terrain feature size
 
     def contour_height(self, x, y):
         # Procedural terrain using PerlinNoise (pure Python)

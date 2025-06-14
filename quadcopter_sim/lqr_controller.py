@@ -48,6 +48,10 @@ def lqr_position_attitude_controller(state, target, g=9.81, m=1.0, max_thrust=60
     # Debug output for thrust and error
     if np.random.rand() < 0.05:
         print(f"[LQR] z={state[2]:.2f}, vz={state[5]:.2f}, err_z={target_pos[2]-pos[2]:.2f}, u2={u[2]:.2f}, thrust={thrust:.2f}")
+    # Debug: print target, position, velocity, error, and control output
+    print(f"[LQR DEBUG] Target pos: {target_pos}, Current pos: {pos}")
+    print(f"[LQR DEBUG] Target vel: {target_vel}, Current vel: {vel}")
+    print(f"[LQR DEBUG] Error: {err}")
     # Optional: yaw control
     if yaw_control and len(target) >= 8:
         yaw = state[8]
@@ -61,5 +65,7 @@ def lqr_position_attitude_controller(state, target, g=9.81, m=1.0, max_thrust=60
         tau_z = np.clip(2.0 * yaw_err + 0.5 * wz_err, -max_tau, max_tau)
     else:
         tau_z = 0.0  # Keep yaw fixed
+    print(f"[LQR DEBUG] Control: tau_x={tau_x:.3f}, tau_y={tau_y:.3f}, thrust={thrust:.3f}, tau_z={tau_z:.3f}")
     # Return control vector (pad to 6 for compatibility)
-    return np.array([tau_x, tau_y, thrust, 0, 0, tau_z])
+    # Negate tau_x and tau_y if drone inclines to wrong side
+    return np.array([-tau_x, -tau_y, thrust, 0, 0, tau_z])

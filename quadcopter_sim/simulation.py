@@ -2,6 +2,7 @@ import numpy as np
 from .main_trajectory import get_main_trajectory
 from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
+from .environment import Environment
 
 class QuadcopterSimulation:
     def __init__(self):
@@ -32,6 +33,19 @@ class QuadcopterSimulation:
         self.manual_mode = False
         self.manual_rpms = np.zeros(4)
         self.atmosphere_density = 1.225  # kg/m^3, default sea level
+        # --- ADJUSTED: Set k_thrust so that hover RPM gives total thrust ≈ weight ---
+        # Calculate required k_thrust for hover at ~6000 RPM (reasonable for small quadcopter)
+        desired_hover_rpm = 6000
+        omega_hover = 2 * np.pi * desired_hover_rpm / 60.0
+        hover_thrust_per_motor = (self.m * self.g) / 4
+        # k_thrust = T / (density * omega^2)
+        self.k_thrust = hover_thrust_per_motor / (self.atmosphere_density * omega_hover ** 2)
+        self.prev_thrust = 0.0
+        self.thrust_alpha = 1  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
+        self.manual_mode = False
+        self.manual_rpms = np.zeros(4)
+        self.atmosphere_density = 1.225  # kg/m^3, default sea level
+        self.environment = Environment(size=3, step=0.5)  # Instantiate the Environment for terrain height checks
         self._init_waypoints()
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
@@ -75,11 +89,14 @@ class QuadcopterSimulation:
         rpm_hover = omega_hover * 60.0 / (2 * np.pi)
         return rpm_hover
 
-    def set_manual_hover(self):
-        """Set manual RPMs to hover value."""
+    def set_manual_hover(self, target_altitude=1.0):
+        """Set manual RPMs to hover at a given altitude (default 1.0m)."""
+        # Adjust mass to simulate hover at different altitudes if needed
+        # For now, just set z to target_altitude
+        self.state[2] = target_altitude
         rpm_hover = self.get_hover_rpm()
         self.manual_rpms[:] = rpm_hover
-        print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f}")
+        print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f} for altitude {target_altitude}m")
 
     def vertical_speed_pid(self, target_vz, dt, kp=2.0, ki=0.5, kd=0.8):
         """PID controller for vertical speed (z axis)."""
@@ -94,7 +111,40 @@ class QuadcopterSimulation:
         # PID output is desired vertical acceleration
         return kp * error + ki * self._vz_pid_integral + kd * derivative
 
+    def check_crash_or_low_altitude(self, threshold=0.05):
+        """Detects crash or dangerously low altitude and triggers crash sequence."""
+        z = self.state[2]
+        vz = self.state[5]
+        if hasattr(self, 'crashed') and self.crashed:
+            return
+        if z <= threshold and vz < -0.1:
+            self.crashed = True
+            self.rotor_speeds[:] = 0
+            print("[CRASH] Drone has crashed or hit dangerously low altitude!")
+
+    def check_recovery(self, vz_threshold=-0.8, window=10):
+        """Detects persistent falling and triggers recovery mode."""
+        if not hasattr(self, '_vz_history'):
+            self._vz_history = []
+        self._vz_history.append(self.state[5])
+        if len(self._vz_history) > window:
+            self._vz_history.pop(0)
+        # If falling for most of the window, trigger recovery
+        if not hasattr(self, 'recovery_mode') or not self.recovery_mode:
+            if sum(1 for vz in self._vz_history if vz < vz_threshold) > window // 2:
+                self.recovery_mode = True
+                print("[RECOVERY] Persistent fall detected! Triggering recovery mode.")
+        # Exit recovery if ascending
+        if hasattr(self, 'recovery_mode') and self.recovery_mode:
+            if self.state[5] > 0.1:
+                self.recovery_mode = False
+                print("[RECOVERY] Recovery complete. Drone stabilized.")
+
     def step(self, delta_time):
+        if hasattr(self, 'crashed') and self.crashed:
+            # If crashed, do not update physics or control
+            return
+
         # Prevent divide by zero or negative time step
         if delta_time is None or delta_time <= 1e-6:
             return
@@ -170,19 +220,22 @@ class QuadcopterSimulation:
             if self.landing_index < len(self.landing_traj) - 1 and np.linalg.norm(self.state[:3] - self.landing_traj[self.landing_index]) < 0.7:
                 self.landing_index += 1
             target = self.landing_traj[self.landing_index]
+            # --- Ensure stable attitude for feet landing ---
+            # During last 10 steps, force roll/pitch to zero for stable landing
+            if self.landing_index >= len(self.landing_traj) - 10:
+                target_attitude = [0.0, 0.0]  # roll, pitch
+                self.state[6] = 0.98 * self.state[6]  # damp roll
+                self.state[7] = 0.98 * self.state[7]  # damp pitch
             # Use position controller for landing
             u = self.position_controller(target)
-            
             # Calculate individual rotor thrusts for debug
             rotor_thrusts = self.calculate_rotor_thrusts(u)
             self.rotor_thrusts = rotor_thrusts  # Store for debug access
-            
             # Debug output every 50 steps (reduce spam)
             if hasattr(self, 'debug_counter'):
                 self.debug_counter += 1
             else:
                 self.debug_counter = 0
-                
             if self.debug_counter % 50 == 0:
                 print(f"LANDING MODE")
                 print(f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}]")
@@ -193,7 +246,6 @@ class QuadcopterSimulation:
                 print(f"Angles: Roll={np.degrees(self.state[6]):.1f}°, Pitch={np.degrees(self.state[7]):.1f}°, "
                       f"Yaw={np.degrees(self.state[8]):.1f}°")
                 print("---")
-            
             self.physics_update(u, delta_time)
             self.trajectory.append(self.state[:3].copy())
             for i in range(4):
@@ -210,8 +262,11 @@ class QuadcopterSimulation:
                 rpm = omega * 60.0 / (2 * np.pi)
                 rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
                 self.rotor_speeds[i] = rpm
-            # If at the end of landing trajectory, stay at last point and exit landing mode
-            if self.landing_index >= len(self.landing_traj) - 1:
+            # --- Check if all feet are on or below ground ---
+            feet = self.feet_positions()
+            all_feet_on_ground = np.all(feet[:,2] <= 0.01)
+            # If at the end of landing trajectory and all feet are on ground, stay at last point and exit landing mode
+            if self.landing_index >= len(self.landing_traj) - 1 and all_feet_on_ground:
                 self.landing_index = len(self.landing_traj) - 1
                 self.is_landing = False
                 del self.landing_traj
@@ -276,6 +331,15 @@ class QuadcopterSimulation:
             rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
             self.rotor_speeds[i] = rpm
 
+        # At the end of the step, check for crash/low altitude
+        self.check_crash_or_low_altitude()
+        self.check_recovery()
+
+        # If in recovery mode, override control to max thrust
+        if hasattr(self, 'recovery_mode') and self.recovery_mode:
+            self.rotor_speeds[:] = self.max_rpm
+            return
+
     def position_controller(self, target):
         return position_controller(
             self.state,
@@ -313,7 +377,8 @@ class QuadcopterSimulation:
         # Linear acceleration
         a = thrust_world / self.m - np.array([0, 0, self.g])
         # --- Ground friction ---
-        if z <= 0.01:
+        ground_z = self.environment.contour_height(x, y) if hasattr(self, 'environment') else 0.0
+        if z <= ground_z + 0.01:
             mu = 2.0  # friction coefficient (tune as needed)
             friction_ax = -mu * vx
             friction_ay = -mu * vy
@@ -324,7 +389,7 @@ class QuadcopterSimulation:
         vz += a[2] * dt
         x += vx * dt
         y += vy * dt
-        z = max(0, z + vz * dt)  # don't go below ground        # Angular acceleration (Euler's equation)
+        z = max(ground_z, z + vz * dt)  # don't go below terrain        # Angular acceleration (Euler's equation)
         omega = np.array([wx, wy, wz])
         tau = np.array([tau_x, tau_y, tau_z])
         # --- Air drag torque ---
@@ -359,6 +424,12 @@ class QuadcopterSimulation:
         # Keep yaw in [-pi, pi]
         yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
         self.state = np.array([x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz])
+
+        # Debug: print control input and resulting thrust vector
+        print(f"[PHYSICS DEBUG] Input u: {u}")
+        print(f"[PHYSICS DEBUG] Thrust body: {thrust_body}, Thrust world: {thrust_world}")
+        print(f"[PHYSICS DEBUG] Acceleration: {a}")
+        print(f"[PHYSICS DEBUG] Position: {[x, y, z]}, Velocity: {[vx, vy, vz]}")
 
     def reset(self):
         self.state[:] = 0
