@@ -86,7 +86,24 @@ class QuadcopterSimulation:
         self.manual_rpms[:] = rpm_hover
         print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f}")
 
+    def vertical_speed_pid(self, target_vz, dt, kp=2.0, ki=0.5, kd=0.8):
+        """PID controller for vertical speed (z axis)."""
+        if not hasattr(self, '_vz_pid_integral'):
+            self._vz_pid_integral = 0.0
+            self._vz_pid_prev_error = 0.0
+        vz = self.state[5]
+        error = target_vz - vz
+        self._vz_pid_integral += error * dt
+        derivative = (error - self._vz_pid_prev_error) / dt
+        self._vz_pid_prev_error = error
+        # PID output is desired vertical acceleration
+        return kp * error + ki * self._vz_pid_integral + kd * derivative
+
     def step(self, delta_time):
+        # Prevent divide by zero or negative time step
+        if delta_time is None or delta_time <= 1e-6:
+            return
+
         if self.manual_mode:
             # Optionally print hover RPM for user
             if not hasattr(self, '_hover_rpm_printed'):
@@ -144,7 +161,26 @@ class QuadcopterSimulation:
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
             self.wp_index += 1
         target = self.waypoints[self.wp_index]
-        u = self.position_controller(target)
+        pos = self.state[:3]
+        vel = self.state[3:6]
+        # If only z changes, treat as vertical maneuver
+        if np.allclose(target[:2], pos[:2], atol=1e-3) and abs(target[2] - pos[2]) > 1e-2:
+            dz = target[2] - pos[2]
+            max_vz = 0.7
+            # Avoid division by zero
+            if delta_time > 1e-6:
+                target_vz = np.clip(dz / delta_time, -max_vz, max_vz)
+            else:
+                target_vz = 0.0
+            acc_z = self.vertical_speed_pid(target_vz, delta_time)
+            u = np.zeros(6)
+            thrust = self.m * (acc_z + self.g)
+            # Clamp thrust to valid range
+            if not np.isfinite(thrust):
+                thrust = self.m * self.g
+            u[2] = np.clip(thrust, 0, 4 * self.max_rpm)
+        else:
+            u = self.position_controller(target)
         
         # Calculate individual rotor thrusts for debug
         rotor_thrusts = self.calculate_rotor_thrusts(u)
@@ -417,20 +453,54 @@ class QuadcopterSimulation:
         T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
         T4 = T_base - d_roll + d_pitch - d_yaw  # Rear Left
         thrusts = np.array([T1, T2, T3, T4])
-        # --- Fine control: scale torques if any thrust < min_thrust ---
         min_thrust = 1e-3
+        # --- New: Always keep all rotors above min_thrust and balance ---
         min_val = np.min(thrusts)
         if min_val < min_thrust:
-            # Compute scaling factor for torques
-            # Only scale torques, not total thrust
-            scale = (T_base - min_thrust) / (T_base - min_val) if T_base != min_val else 0.0
-            d_roll *= scale
-            d_pitch *= scale
-            d_yaw *= scale
-            T1 = T_base + d_roll + d_pitch + d_yaw
-            T2 = T_base + d_roll - d_pitch - d_yaw
-            T3 = T_base - d_roll - d_pitch + d_yaw
-            T4 = T_base - d_roll + d_pitch - d_yaw
-            thrusts = np.array([T1, T2, T3, T4])
+            # Shift all thrusts up so the minimum is at least min_thrust
+            diff = min_thrust - min_val
+            thrusts += diff
+            # If this causes total thrust to exceed the command, scale all down proportionally
+            total = np.sum(thrusts)
+            if total > total_thrust:
+                thrusts = thrusts * (total_thrust / total)
+        # Optionally: keep the difference between max and min small (balance)
+        max_diff = 0.6 * T_base  # limit max difference between rotors
+        max_val = np.max(thrusts)
+        if max_val - np.min(thrusts) > max_diff:
+            mean_val = np.mean(thrusts)
+            thrusts = np.clip(thrusts, mean_val - max_diff/2, mean_val + max_diff/2)
+            # Rebalance to keep total thrust
+            thrusts = thrusts * (total_thrust / np.sum(thrusts))
         thrusts = np.clip(thrusts, min_thrust, None)
         return thrusts
+
+    def takeoff(self, target_altitude=3.0):
+        """Initiate a takeoff sequence to a specified altitude."""
+        # Insert takeoff waypoints from current position to target altitude
+        current_pos = self.state[:3].copy()
+        takeoff_traj = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(current_pos[2], target_altitude, 20)]
+        # Insert a hover at the top
+        hover = [np.array([current_pos[0], current_pos[1], target_altitude])] * 50
+        # Prepend to the rest of the mission
+        self.waypoints = takeoff_traj + hover + list(self.waypoints[self.wp_index+1:])
+        self.wp_index = 0
+
+    def land(self):
+        """Initiate a landing sequence with a soft, staged descent."""
+        current_pos = self.state[:3].copy()
+        z0 = current_pos[2]
+        # Descend quickly to 1.0m, then slow descent to 0.2m, then very slow to ground
+        if z0 > 1.0:
+            fast = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(z0, 1.0, 10)]
+        else:
+            fast = []
+        if z0 > 0.2:
+            slow = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(1.0, 0.2, 10)]
+        else:
+            slow = []
+        final = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(0.2, 0, 10)]
+        hover_low = [np.array([current_pos[0], current_pos[1], 0.2])] * 20
+        hover_ground = [np.array([current_pos[0], current_pos[1], 0])] * 30
+        self.waypoints = fast + hover_low + slow + final + hover_ground
+        self.wp_index = 0
