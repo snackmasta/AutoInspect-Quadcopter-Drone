@@ -1,7 +1,21 @@
-from OpenGL.GL import *
-from OpenGL.GLU import *
+import os
+# Force use of high-performance GPU on NVIDIA/AMD systems (must be set before OpenGL context creation)
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["QT_DEVICE_PIXEL_RATIO"] = "auto"
+# For NVIDIA Optimus (laptops):
+os.environ["CUDA_FORCE_PTX_JIT"] = "1"
+os.environ["NVIDIA_OPTIMUS_ENABLE_NVML"] = "1"
+os.environ["NV_OPTIMUS_ENABLE"] = "1"
+# For AMD switchable graphics:
+os.environ["AMD_POWERXPRESS_REQUEST_HIGH_PERFORMANCE"] = "1"
+
 import numpy as np
+from OpenGL.GL import *
+from OpenGL.arrays import vbo
+from OpenGL.GLU import *
 import imgui
+from quadcopter_sim.environment import Environment
 
 class Renderer:
     def __init__(self, sim):
@@ -12,6 +26,12 @@ class Renderer:
         # Camera interaction state
         self._dragging = False
         self._last_mouse = (0, 0)
+        self.environment = Environment(size=3, step=0.5)
+        self.show_lidar = False  # Toggle for LiDAR visualization (default OFF)
+        self.scanned_points = []  # Accumulated scanned terrain points
+        self.vbo = None  # Vertex Buffer Object for scanned points
+        self.vbo_needs_update = True
+        self.show_camera = False  # Camera visualization toggle, default off
 
     def handle_mouse(self, window):
         import glfw
@@ -37,16 +57,7 @@ class Renderer:
         glfw.set_scroll_callback(window, scroll_callback)
 
     def draw_ground_grid(self, size=3, step=0.5):
-        glColor3f(0.7, 0.7, 0.7)
-        glLineWidth(1)
-        glBegin(GL_LINES)
-        for x in np.arange(-1, size+step, step):
-            glVertex3f(x, -1, 0)
-            glVertex3f(x, size, 0)
-        for y in np.arange(-1, size+step, step):
-            glVertex3f(-1, y, 0)
-            glVertex3f(size, y, 0)
-        glEnd()
+        self.environment.draw()
 
     def draw_scene(self):
         sim = self.sim
@@ -84,6 +95,14 @@ class Renderer:
         _, self.angle_y = imgui.slider_float("Angle Y", self.angle_y, -180.0, 180.0)
         _, self.angle_z = imgui.slider_float("Angle Z", self.angle_z, -180.0, 180.0)
         _, self.zoom = imgui.slider_float("Zoom", self.zoom, 0.2, 3.0)
+        imgui.separator()
+        # Manual control toggle and sliders
+        changed, self.sim.manual_mode = imgui.checkbox("Manual Mode", self.sim.manual_mode)
+        if self.sim.manual_mode:
+            imgui.text("Manual Propeller RPM Control")
+            for i in range(4):
+                _, rpm = imgui.slider_float(f"Propeller {i+1} RPM", float(self.sim.manual_rpms[i]), self.sim.min_rpm, self.sim.max_rpm)
+                self.sim.manual_rpms[i] = rpm
         imgui.separator()
         if len(sim.trajectory) > 1:
             altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
@@ -134,13 +153,15 @@ class Renderer:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        # Camera now orbits around the drone's current position
+        # Camera orbit: calculate camera position in spherical coordinates around the drone
         center = sim.state[:3]
-        glTranslatef(-center[0], -center[1], -center[2])
-        glTranslatef(0, 0, -10 * self.zoom)
-        glRotatef(self.angle_x, 1, 0, 0)  # pitch (x)
-        glRotatef(self.angle_z, 0, 0, 1)  # yaw (z)
-        # Removed yaw (angle_y)
+        r = 10 * self.zoom
+        pitch = np.radians(self.angle_x)
+        yaw = np.radians(self.angle_z)
+        cam_x = center[0] + r * np.cos(pitch) * np.sin(yaw)
+        cam_y = center[1] + r * np.cos(pitch) * np.cos(yaw)
+        cam_z = center[2] + r * np.sin(pitch)
+        gluLookAt(cam_x, cam_y, cam_z, center[0], center[1], center[2], 0, 0, 1)
         self.draw_ground_grid()
         glColor3f(1, 1, 0)
         glPointSize(8)
@@ -186,6 +207,167 @@ class Renderer:
         glBegin(GL_POINTS)
         glVertex3f(*sim.waypoints[sim.wp_index])
         glEnd()
+        # Draw drone feet
+        feet = sim.feet_positions()
+        glColor3f(0.4, 0.2, 0.1)  # brown feet
+        glPointSize(10)
+        glBegin(GL_POINTS)
+        for f in feet:
+            glVertex3f(*f)
+        glEnd()
+        # Draw hitboxes (as circles in XY plane)
+        for f in feet:
+            glPushMatrix()
+            glTranslatef(f[0], f[1], f[2])
+            glColor3f(1, 0, 1)
+            glBegin(GL_LINE_LOOP)
+            for i in range(20):
+                theta = 2 * np.pi * i / 20
+                x = 0.06 * np.cos(theta)
+                y = 0.06 * np.sin(theta)
+                glVertex3f(x, y, 0)
+            glEnd()
+            glPopMatrix()
+        # Draw drone sensors (camera FOV and LiDAR rays)
+        sim = self.sim
+        # Camera FOV visualization
+        pos = sim.state[:3].copy()
+        pos[2] -= 0.2
+        fov = 60
+        half_fov = np.radians(fov / 2)
+        size = np.tan(half_fov) * pos[2]
+        corners = [
+            [pos[0] - size, pos[1] - size, self.environment.contour_height(pos[0] - size, pos[1] - size)],
+            [pos[0] + size, pos[1] - size, self.environment.contour_height(pos[0] + size, pos[1] - size)],
+            [pos[0] + size, pos[1] + size, self.environment.contour_height(pos[0] + size, pos[1] + size)],
+            [pos[0] - size, pos[1] + size, self.environment.contour_height(pos[0] - size, pos[1] + size)],
+        ]
+        glColor3f(0.2, 0.8, 1.0)
+        glLineWidth(2)
+        glBegin(GL_LINE_LOOP)
+        for c in corners:
+            glVertex3f(*c)
+        glEnd()
+        # Show camera and LiDAR data in ImGui
+        imgui.separator()
+        if self.show_camera:
+            imgui.text("Camera (heightmap, center)")
+            cam_img = sim.get_camera_image(self.environment, fov=60, res=16)
+            imgui.plot_lines("", cam_img[cam_img.shape[0]//2], graph_size=(300, 60))
+            imgui.separator()
+        if imgui.button("Toggle LiDAR"):
+            self.show_lidar = not self.show_lidar
+        imgui.same_line()
+        imgui.text(f"LiDAR: {'ON' if self.show_lidar else 'OFF'}")
+        # Remove LiDAR scan and plot, bind vertex accumulation/rendering to LiDAR toggle
+        if self.show_lidar:
+            # Simulate LiDAR-like accumulation: only add a few points per frame in a circular scan
+            if not hasattr(self, 'lidar_angle'):
+                self.lidar_angle = 0.0
+            num_rays = 32  # number of rays per scan
+            scan_radius = 1.0  # scan radius in meters
+            pos = sim.state[:3].copy()
+            pos[2] -= 0.2
+            angles = np.linspace(self.lidar_angle, self.lidar_angle + 2 * np.pi, num_rays, endpoint=False)
+            for angle in angles:
+                x = pos[0] + scan_radius * np.cos(angle)
+                y = pos[1] + scan_radius * np.sin(angle)
+                z = self.environment.contour_height(x, y)
+                key = (round(x, 2), round(y, 2))
+                if not hasattr(self, 'scanned_points_set'):
+                    self.scanned_points_set = set()
+                if key not in self.scanned_points_set:
+                    self.scanned_points_set.add(key)
+                    if not hasattr(self, 'scanned_points'):
+                        self.scanned_points = []
+                    self.scanned_points.append((x, y, z))
+            self.lidar_angle = (self.lidar_angle + np.pi / 32) % (2 * np.pi)
+            # Prepare VBO data if needed
+            arr = np.array(self.scanned_points, dtype=np.float32)
+            if arr.size > 0:
+                if self.vbo is not None:
+                    self.vbo.delete()
+                self.vbo = vbo.VBO(arr)
+                self.vbo_needs_update = False
+            # Render all accumulated scanned points as GL_POINTS using VBO
+            if self.vbo is not None:
+                glEnable(GL_BLEND)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                glPointSize(3)
+                self.vbo.bind()
+                glEnableClientState(GL_VERTEX_ARRAY)
+                glVertexPointer(3, GL_FLOAT, 0, self.vbo)
+                glColor4f(0.2, 0.8, 0.2, 0.5)
+                glDrawArrays(GL_POINTS, 0, len(self.scanned_points))
+                glDisableClientState(GL_VERTEX_ARRAY)
+                self.vbo.unbind()
+                glDisable(GL_BLEND)
+        imgui.separator()
+        self.draw_thrust_arrows(sim)
+
+    def draw_thrust_arrows(self, sim):
+        """Draw arrows showing the thrust force from each rotor"""
+        if not hasattr(sim, 'rotor_thrusts'):
+            return
+            
+        rotors = sim.rotor_positions()
+        max_thrust = max(sim.rotor_thrusts) if max(sim.rotor_thrusts) > 0 else 1.0
+        
+        # Draw thrust arrows downward from each rotor
+        glLineWidth(4)
+        for i, (rotor_pos, thrust) in enumerate(zip(rotors, sim.rotor_thrusts)):
+            if thrust <= 0:
+                continue
+                
+            # Normalize thrust to arrow length (0.1 to 1.0 meters)
+            arrow_length = 0.1 + (thrust / max_thrust) * 0.9
+            
+            # Arrow color based on thrust intensity
+            intensity = thrust / max_thrust
+            glColor3f(1.0, 1.0 - intensity, 0.0)  # Yellow to Red gradient
+            
+            # Draw main arrow shaft (downward)
+            start_pos = np.array(rotor_pos)
+            end_pos = start_pos - np.array([0, 0, arrow_length])
+            
+            glBegin(GL_LINES)
+            glVertex3f(*start_pos)
+            glVertex3f(*end_pos)
+            glEnd()
+            
+            # Draw arrowhead
+            arrow_tip = end_pos
+            arrow_size = 0.05
+            
+            glBegin(GL_TRIANGLES)
+            # Arrowhead pointing down
+            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
+            
+            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            
+            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            
+            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
+            glEnd()
+            
+            # Draw thrust value as text near the arrow
+            # Note: This is a simplified text rendering - in a real app you'd use a proper text renderer
+            glPushMatrix()
+            glTranslatef(rotor_pos[0] + 0.1, rotor_pos[1] + 0.1, rotor_pos[2])
+            glColor3f(1, 1, 1)
+            # We'll just draw the rotor number for now since OpenGL text rendering is complex
+            # You could integrate a text rendering library here
+            glPopMatrix()
+
+    # ...existing code...
 
     def reshape(self, width, height):
         self.window_width, self.window_height = width, height

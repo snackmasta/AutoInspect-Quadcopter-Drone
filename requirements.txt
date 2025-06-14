@@ -1,0 +1,6 @@
+numpy
+PyOpenGL
+PyOpenGL_accelerate
+imgui[full]
+glfw
+perlin-noise
