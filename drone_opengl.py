@@ -3,9 +3,9 @@ import sys
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
-import threading
-import tkinter as tk
 from queue import SimpleQueue
+import imgui
+from imgui.integrations.opengl import ProgrammablePipelineRenderer
 
 # Simulation constants
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
@@ -37,8 +37,10 @@ window_width, window_height = 1200, 800
 angle_x, angle_y, angle_z = -73, 0, 17  # Set default camera angles to match the screenshot
 zoom = 1.2
 
-# Thread-safe queue for redisplay requests
-redisplay_queue = SimpleQueue()
+# For spinning blades
+blade_angles = [0.0, 0.0, 0.0, 0.0]
+
+imgui_renderer = None  # Will hold the ImGui OpenGL renderer
 
 # Control and update functions (copied from original)
 def control_input(state, target):
@@ -81,14 +83,28 @@ def draw_ground_grid(size=3, step=0.5):
     glEnd()
 
 def draw_scene():
-    global state, wp_index, rotor_speeds, spinup_done, trajectory
+    global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles, imgui_renderer, angle_x, angle_y, angle_z, zoom
+    # Set ImGui display size before starting new frame
+    io = imgui.get_io()
+    io.display_size = (window_width, window_height)
+    # Start new ImGui frame
+    imgui.new_frame()
+
+    # ImGui window for camera controls
+    imgui.begin("Camera Controls")
+    changed_x, angle_x = imgui.slider_float("Angle X", angle_x, -90.0, 90.0)
+    changed_y, angle_y = imgui.slider_float("Angle Y", angle_y, -180.0, 180.0)
+    changed_z, angle_z = imgui.slider_float("Angle Z", angle_z, -180.0, 180.0)
+    changed_zoom, zoom = imgui.slider_float("Zoom", zoom, 0.2, 3.0)
+    imgui.end()
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
     glTranslatef(0, 0, -10 * zoom)
     glRotatef(angle_x, 1, 0, 0)
     glRotatef(angle_y, 0, 1, 0)
-    glRotatef(angle_z, 0, 0, 1)  # Add Z rotation
+    glRotatef(angle_z, 0, 0, 1)
 
     # Draw ground grid for reference
     draw_ground_grid()
@@ -118,14 +134,27 @@ def draw_scene():
         glVertex3f(*center)
         glVertex3f(*rotors[i])
     glEnd()
-
-    # Draw rotors
+    # Draw rotors (hubs)
     glColor3f(1, 0, 0)
     glPointSize(12)
     glBegin(GL_POINTS)
     for r in rotors:
         glVertex3f(*r)
     glEnd()
+    # Draw spinning blades
+    for i, r in enumerate(rotors):
+        glPushMatrix()
+        glTranslatef(r[0], r[1], r[2])
+        glRotatef(blade_angles[i], 0, 0, 1)
+        glColor3f(0.2, 0.2, 0.2)
+        glLineWidth(4)
+        glBegin(GL_LINES)
+        glVertex3f(-0.18, 0, 0)
+        glVertex3f(0.18, 0, 0)
+        glVertex3f(0, -0.06, 0)
+        glVertex3f(0, 0.06, 0)
+        glEnd()
+        glPopMatrix()
 
     # Draw current target
     glColor3f(0, 1, 0)
@@ -134,14 +163,13 @@ def draw_scene():
     glVertex3f(*waypoints[wp_index])
     glEnd()
 
+    # Render ImGui on top
+    imgui.render()
+    imgui_renderer.render(imgui.get_draw_data())
     glutSwapBuffers()
 
 def update(value):
-    global state, wp_index, rotor_speeds, spinup_done, trajectory
-    # Check for redisplay requests from Tkinter
-    while not redisplay_queue.empty():
-        redisplay_queue.get()
-        glutPostRedisplay()
+    global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles
     if not spinup_done:
         rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
         if np.all(rotor_speeds >= startup_rpm):
@@ -154,6 +182,9 @@ def update(value):
             u = control_input(state, target)
             state[:] = update_state(state, u)
             trajectory.append(state[:3].copy())
+    # Update blade angles based on RPM
+    for i in range(4):
+        blade_angles[i] = (blade_angles[i] + rotor_speeds[i] * 360.0 / 60.0 * dt) % 360
     glutPostRedisplay()
     glutTimerFunc(int(dt * 1000), update, 0)
 
@@ -188,118 +219,16 @@ def special_keys(key, x, y):
         angle_x += 5
     glutPostRedisplay()
 
-def start_tkinter_controls():
-    def on_angle_x(val):
-        global angle_x
-        angle_x = float(val)
-        redisplay_queue.put(1)
-
-    def on_angle_y(val):
-        global angle_y
-        angle_y = float(val)
-        redisplay_queue.put(1)
-
-    def on_angle_z(val):
-        global angle_z
-        angle_z = float(val)
-        redisplay_queue.put(1)
-
-    root = tk.Tk()
-    root.title("Camera Angle Controls")
-    tk.Label(root, text="Angle X (tilt)").pack()
-    sx = tk.Scale(root, from_=-90, to=90, orient=tk.HORIZONTAL, length=300, command=on_angle_x)
-    sx.set(angle_x)
-    sx.pack()
-    tk.Label(root, text="Angle Y (pan)").pack()
-    sy = tk.Scale(root, from_=-180, to=180, orient=tk.HORIZONTAL, length=300, command=on_angle_y)
-    sy.set(angle_y)
-    sy.pack()
-    tk.Label(root, text="Angle Z (roll)").pack()
-    sz = tk.Scale(root, from_=-180, to=180, orient=tk.HORIZONTAL, length=300, command=on_angle_z)
-    sz.set(angle_z)
-    sz.pack()
-    root.mainloop()
-
-# --- Tkinter drone topdown UI ---
-# Add RPM history buffer for trend graph
-rpm_history_len = 100
-rpm_history = [ [0]*rpm_history_len for _ in range(4) ]
-
-def start_drone_topdown_ui():
-    import math
-    def rpm_color(val):
-        if val < 3500:
-            return 'yellow'
-        elif val > 5500:
-            return 'red'
-        else:
-            return 'green'
-    def update_canvas():
-        canvas.delete('all')
-        # Draw main border and title
-        canvas.create_rectangle(10, 10, 230, 200, outline='black', width=3)
-        canvas.create_text(120, 20, text='DRONE SCADA HMI', font=('Arial', 12, 'bold'))
-        cx, cy = 120, 100
-        arm = 60
-        # Draw arms
-        for angle in [math.pi/4, 3*math.pi/4, 5*math.pi/4, 7*math.pi/4]:
-            x2 = cx + arm * math.cos(angle)
-            y2 = cy + arm * math.sin(angle)
-            canvas.create_line(cx, cy, x2, y2, width=6, fill='#222')
-        # Draw rotors, RPM, and digital readout
-        for i, angle in enumerate([math.pi/4, 3*math.pi/4, 5*math.pi/4, 7*math.pi/4]):
-            x = cx + arm * math.cos(angle)
-            y = cy + arm * math.sin(angle)
-            color = rpm_color(rotor_speeds[i])
-            canvas.create_oval(x-18, y-18, x+18, y+18, fill=color, outline='black', width=2)
-            canvas.create_text(x, y, text=f"{int(rotor_speeds[i])}", font=('Arial', 11, 'bold'), fill='white')
-            canvas.create_text(x, y+25, text=f"RPM", font=('Arial', 8, 'bold'), fill='black')
-        # Update RPM history
-        for i in range(4):
-            rpm_history[i].append(rotor_speeds[i])
-            if len(rpm_history[i]) > rpm_history_len:
-                rpm_history[i].pop(0)
-        # Draw trend graphs
-        graph_w, graph_h = 80, 40
-        for i in range(4):
-            gx = 20 + (i%2)*110
-            gy = 210 + (i//2)*60
-            canvas.create_rectangle(gx, gy, gx+graph_w, gy+graph_h, outline='gray')
-            if len(rpm_history[i]) > 1:
-                min_rpm = min(rpm_history[i])
-                max_rpm = max(rpm_history[i])
-                rng = max(1, max_rpm - min_rpm)
-                points = []
-                for j, rpm in enumerate(rpm_history[i]):
-                    px = gx + j * graph_w / (rpm_history_len-1)
-                    py = gy + graph_h - ((rpm-min_rpm)/rng)*graph_h
-                    points.append((px, py))
-                for j in range(1, len(points)):
-                    canvas.create_line(points[j-1][0], points[j-1][1], points[j][0], points[j][1], fill='blue', width=2)
-            canvas.create_text(gx+graph_w/2, gy+graph_h+8, text=f"Rotor {i+1} Trend", font=('Arial', 8))
-        # Status bar
-        canvas.create_rectangle(0, 280, 240, 300, fill='#222', outline='black')
-        canvas.create_text(120, 290, text='System: RUNNING', font=('Arial', 10, 'bold'), fill='white')
-        root.after(100, update_canvas)
-    root = tk.Tk()
-    root.title("Drone SCADA HMI")
-    canvas = tk.Canvas(root, width=240, height=300, bg='white')
-    canvas.pack()
-    update_canvas()
-    root.mainloop()
-
 def main():
-    # Start Tkinter controls in a separate thread
-    threading.Thread(target=start_tkinter_controls, daemon=True).start()
-    # Start drone topdown UI in a separate thread
-    threading.Thread(target=start_drone_topdown_ui, daemon=True).start()
-
+    global imgui_renderer
     glutInit(sys.argv)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
     glutInitWindowSize(window_width, window_height)
     glutCreateWindow(b"Quadcopter PyOpenGL Simulation")
     glEnable(GL_DEPTH_TEST)
     glClearColor(1, 1, 1, 1)
+    imgui.create_context()
+    imgui_renderer = ProgrammablePipelineRenderer()
     glutDisplayFunc(draw_scene)
     glutReshapeFunc(reshape)
     glutKeyboardFunc(keyboard)
