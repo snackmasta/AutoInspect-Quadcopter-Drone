@@ -1,0 +1,125 @@
+from OpenGL.GL import *
+from OpenGL.GLU import *
+import numpy as np
+import imgui
+
+class Renderer:
+    def __init__(self, sim):
+        self.sim = sim
+        self.window_width, self.window_height = 1200, 800
+        self.angle_x, self.angle_y, self.angle_z = -73, 0, 17
+        self.zoom = 1.2
+
+    def draw_ground_grid(self, size=3, step=0.5):
+        glColor3f(0.7, 0.7, 0.7)
+        glLineWidth(1)
+        glBegin(GL_LINES)
+        for x in np.arange(-1, size+step, step):
+            glVertex3f(x, -1, 0)
+            glVertex3f(x, size, 0)
+        for y in np.arange(-1, size+step, step):
+            glVertex3f(-1, y, 0)
+            glVertex3f(size, y, 0)
+        glEnd()
+
+    def draw_scene(self):
+        sim = self.sim
+        io = imgui.get_io()
+        io.display_size = (self.window_width, self.window_height)
+        imgui.set_next_window_position(10, 10)
+        imgui.set_next_window_size(350, 500)
+        imgui.begin("Mission Control", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+        if imgui.button("Pause"): pass
+        imgui.same_line()
+        if imgui.button("Resume"): pass
+        imgui.same_line()
+        if imgui.button("Reset"): sim.reset()
+        imgui.separator()
+        imgui.text("Telemetry")
+        pos, vel = sim.state[:3], sim.state[3:]
+        imgui.text(f"Position: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
+        imgui.text(f"Velocity: x={vel[0]:.2f}, y={vel[1]:.2f}, z={vel[2]:.2f}")
+        imgui.text(f"Current Waypoint: {sim.wp_index+1}/{len(sim.waypoints)}")
+        imgui.text(f"Rotor Speeds: {', '.join(f'{rpm:.0f}' for rpm in sim.rotor_speeds)} RPM")
+        # Additional situational awareness telemetry
+        distance_to_wp = np.linalg.norm(pos - sim.waypoints[sim.wp_index])
+        imgui.text(f"Distance to Waypoint: {distance_to_wp:.2f} m")
+        if sim.wp_index < len(sim.waypoints) - 1:
+            next_wp = sim.waypoints[sim.wp_index + 1]
+            imgui.text(f"Next Waypoint: x={next_wp[0]:.2f}, y={next_wp[1]:.2f}, z={next_wp[2]:.2f}")
+        imgui.text(f"Spinup Done: {sim.spinup_done}")
+        imgui.text(f"Trajectory Points: {len(sim.trajectory)}")
+        imgui.text(f"Altitude: {pos[2]:.2f} m")
+        imgui.text(f"Ground Speed: {np.linalg.norm(vel[:2]):.2f} m/s")
+        imgui.text(f"Vertical Speed: {vel[2]:.2f} m/s")
+        imgui.separator()
+        imgui.text("Camera Controls")
+        _, self.angle_x = imgui.slider_float("Angle X", self.angle_x, -90.0, 90.0)
+        _, self.angle_y = imgui.slider_float("Angle Y", self.angle_y, -180.0, 180.0)
+        _, self.angle_z = imgui.slider_float("Angle Z", self.angle_z, -180.0, 180.0)
+        _, self.zoom = imgui.slider_float("Zoom", self.zoom, 0.2, 3.0)
+        imgui.separator()
+        if len(sim.trajectory) > 1:
+            altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
+            imgui.plot_lines("Altitude (last 100 steps)", altitudes, graph_size=(300, 80))
+        imgui.end()
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glTranslatef(0, 0, -10 * self.zoom)
+        glRotatef(self.angle_x, 1, 0, 0)
+        glRotatef(self.angle_y, 0, 1, 0)
+        glRotatef(self.angle_z, 0, 0, 1)
+        self.draw_ground_grid()
+        glColor3f(1, 1, 0)
+        glPointSize(8)
+        glBegin(GL_POINTS)
+        for wp in sim.waypoints:
+            glVertex3f(*wp)
+        glEnd()
+        glColor3f(0, 0, 1)
+        glBegin(GL_LINE_STRIP)
+        for p in sim.trajectory:
+            glVertex3f(*p)
+        glEnd()
+        center = sim.state[:3]
+        rotors = sim.rotor_positions()
+        glColor3f(0, 0, 0)
+        glLineWidth(3)
+        glBegin(GL_LINES)
+        for i in range(4):
+            glVertex3f(*center)
+            glVertex3f(*rotors[i])
+        glEnd()
+        glColor3f(1, 0, 0)
+        glPointSize(12)
+        glBegin(GL_POINTS)
+        for r in rotors:
+            glVertex3f(*r)
+        glEnd()
+        for i, r in enumerate(rotors):
+            glPushMatrix()
+            glTranslatef(r[0], r[1], r[2])
+            glRotatef(sim.blade_angles[i], 0, 0, 1)
+            glColor3f(0.2, 0.2, 0.2)
+            glLineWidth(4)
+            glBegin(GL_LINES)
+            glVertex3f(-0.18, 0, 0)
+            glVertex3f(0.18, 0, 0)
+            glVertex3f(0, -0.06, 0)
+            glVertex3f(0, 0.06, 0)
+            glEnd()
+            glPopMatrix()
+        glColor3f(0, 1, 0)
+        glPointSize(14)
+        glBegin(GL_POINTS)
+        glVertex3f(*sim.waypoints[sim.wp_index])
+        glEnd()
+
+    def reshape(self, width, height):
+        self.window_width, self.window_height = width, height
+        glViewport(0, 0, width, height)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45, width / float(height), 0.1, 100.0)
+        glMatrixMode(GL_MODELVIEW)
