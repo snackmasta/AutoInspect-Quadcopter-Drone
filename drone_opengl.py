@@ -83,14 +83,46 @@ def draw_scene():
     global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles, angle_x, angle_y, angle_z, zoom
     io = imgui.get_io()
     io.display_size = (window_width, window_height)
-    # Start new ImGui frame is now handled in main loop
 
-    # ImGui window for camera controls
-    imgui.begin("Camera Controls")
+    # Mission Control Panel
+    imgui.set_next_window_position(10, 10)
+    imgui.set_next_window_size(350, 500)
+    imgui.begin("Mission Control", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+
+    # Simulation Controls
+    if imgui.button("Pause"):  # Placeholder, implement pause logic if needed
+        pass
+    imgui.same_line()
+    if imgui.button("Resume"):  # Placeholder, implement resume logic if needed
+        pass
+    imgui.same_line()
+    if imgui.button("Reset"):
+        reset_simulation()
+
+    imgui.separator()
+    # Telemetry
+    imgui.text("Telemetry")
+    pos, vel = state[:3], state[3:]
+    imgui.text(f"Position: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
+    imgui.text(f"Velocity: x={vel[0]:.2f}, y={vel[1]:.2f}, z={vel[2]:.2f}")
+    imgui.text(f"Current Waypoint: {wp_index+1}/{len(waypoints)}")
+    imgui.text(f"Rotor Speeds: {', '.join(f'{rpm:.0f}' for rpm in rotor_speeds)} RPM")
+
+    imgui.separator()
+    # Camera Controls
+    imgui.text("Camera Controls")
     changed_x, angle_x = imgui.slider_float("Angle X", angle_x, -90.0, 90.0)
     changed_y, angle_y = imgui.slider_float("Angle Y", angle_y, -180.0, 180.0)
     changed_z, angle_z = imgui.slider_float("Angle Z", angle_z, -180.0, 180.0)
     changed_zoom, zoom = imgui.slider_float("Zoom", zoom, 0.2, 3.0)
+
+    imgui.separator()
+    # Altitude Plot
+    if len(trajectory) > 1:
+        import numpy as np
+        altitudes = np.array([p[2] for p in trajectory[-100:]], dtype=np.float32)
+        imgui.plot_lines("Altitude (last 100 steps)", altitudes, graph_size=(300, 80))
+
     imgui.end()
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -186,6 +218,16 @@ def reshape(width, height):
     glLoadIdentity()
     gluPerspective(45, width / float(height), 0.1, 100.0)
     glMatrixMode(GL_MODELVIEW)
+
+def reset_simulation():
+    global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles
+    state[:] = 0
+    state[2] = 0  # Start at z=0
+    wp_index = 0
+    rotor_speeds[:] = 0
+    spinup_done = False
+    trajectory.clear()
+    blade_angles[:] = [0.0, 0.0, 0.0, 0.0]
 
 def main():
     global window_width, window_height, angle_x, angle_y, angle_z, zoom
