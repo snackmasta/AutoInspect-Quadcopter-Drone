@@ -150,7 +150,7 @@ class Renderer:
         # Rotor RPM as mini bar graphs
         imgui.text("Rotor RPM")
         for i, rpm in enumerate(sim.rotor_speeds):
-            imgui.progress_bar(min(rpm / 6000.0, 1.0), size=(75, 12), overlay=f"{int(rpm)}")
+            imgui.progress_bar(min(rpm / 12000.0, 1.0), size=(75, 12), overlay=f"{int(rpm)}")
             if i < 3:
                 imgui.same_line()
         imgui.new_line()
@@ -353,14 +353,14 @@ class Renderer:
             
             glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
             glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
             
             glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
             
             glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] + arrow_size, arrow_tip[2] + arrow_size)
+            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
             glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
             glEnd()
             

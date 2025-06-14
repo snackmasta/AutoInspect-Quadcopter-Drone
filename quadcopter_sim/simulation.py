@@ -1,4 +1,5 @@
 import numpy as np
+from .main_trajectory import get_main_trajectory
 
 class QuadcopterSimulation:
     def __init__(self):
@@ -57,20 +58,7 @@ class QuadcopterSimulation:
         return new_wps
 
     def _init_waypoints(self):
-        # Simple takeoff to (0,0,6) and hover, then move to a new point to test yaw/roll/pitch
-        altitude = 6.0
-        takeoff = [np.array([0, 0, z]) for z in np.linspace(0, altitude, 10)]
-        hover = [np.array([0, 0, altitude])] * 100  # Shorter hover
-        # New waypoint: move to (5, 5, 6) to test yaw/roll/pitch
-        move1 = [np.array([x, x, altitude]) for x in np.linspace(0, 5, 30)]
-        hover2 = [np.array([5, 5, altitude])] * 70
-        # Move to (-5, 5, 6) to test more angular dynamics
-        move2 = [np.array([x, 5, altitude]) for x in np.linspace(5, -5, 30)]
-        hover3 = [np.array([-5, 5, altitude])] * 70
-        # Return to center
-        move3 = [np.array([x, y, altitude]) for x, y in zip(np.linspace(-5, 0, 30), np.linspace(5, 0, 30))]
-        hover4 = [np.array([0, 0, altitude])] * 50
-        wps = takeoff + hover + move1 + hover2 + move2 + hover3 + move3 + hover4
+        wps = get_main_trajectory()
         self.waypoints = self._insert_hover_after_sharp_turns(wps, hover_steps=60, angle_threshold_deg=30)
 
     def get_hover_rpm(self):
@@ -262,8 +250,37 @@ class QuadcopterSimulation:
         kp_att, kd_att = 8.0, 2.0
         tau_x = kp_att * (roll_des - roll) - kd_att * wx
         tau_y = kp_att * (pitch_des - pitch) - kd_att * wy
-        # No yaw control: tau_z = 0
-        tau_z = 0.0
+        # Toggleable yaw control
+        if hasattr(self, 'yaw_control_enabled') and self.yaw_control_enabled:
+            # Yaw control enabled: compute desired yaw and tau_z as before
+            # --- Lookahead Yaw Logic with Stabilize-on-Hover ---
+            desired_yaw = None
+            if hasattr(self, 'hover_indices') and self.wp_index in self.hover_indices:
+                desired_yaw = yaw
+            else:
+                if hasattr(self, 'waypoints') and hasattr(self, 'wp_index'):
+                    if self.wp_index < len(self.waypoints) - 1:
+                        next_wp = self.waypoints[self.wp_index + 1]
+                        lookahead_dx = next_wp[0] - target[0]
+                        lookahead_dy = next_wp[1] - target[1]
+                        if abs(lookahead_dx) > 1e-3 or abs(lookahead_dy) > 1e-3:
+                            desired_yaw = np.arctan2(lookahead_dy, lookahead_dx)
+            if desired_yaw is None:
+                desired_yaw = np.arctan2(dy, dx)
+            heading_vec = np.array([np.cos(yaw), np.sin(yaw)])
+            target_vec = np.array([np.cos(desired_yaw), np.sin(desired_yaw)])
+            yaw_error = desired_yaw - yaw
+            cross = heading_vec[0]*target_vec[1] - heading_vec[1]*target_vec[0]
+            if cross < 0 and yaw_error > 0:
+                yaw_error -= 2 * np.pi
+            elif cross > 0 and yaw_error < 0:
+                yaw_error += 2 * np.pi
+            kp_yaw = 4.0
+            kd_yaw = 1.0
+            tau_z = kp_yaw * yaw_error - kd_yaw * wz
+        else:
+            # Yaw control disabled
+            tau_z = 0.0
         # Total thrust (vertical component)
         thrust = self.m * acc_des[2]
         thrust = np.clip(thrust, 0, 4 * self.max_rpm)
@@ -471,21 +488,18 @@ class QuadcopterSimulation:
         return thrusts
 
     def takeoff(self, target_altitude=3.0):
-        """Initiate a takeoff sequence to a specified altitude."""
-        # Insert takeoff waypoints from current position to target altitude
+        """Initiate a takeoff sequence to a specified altitude, preserving the main route."""
         current_pos = self.state[:3].copy()
         takeoff_traj = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(current_pos[2], target_altitude, 20)]
-        # Insert a hover at the top
         hover = [np.array([current_pos[0], current_pos[1], target_altitude])] * 50
-        # Prepend to the rest of the mission
-        self.waypoints = takeoff_traj + hover + list(self.waypoints[self.wp_index+1:])
+        # Insert takeoff/hover before current waypoint, then continue mission
+        self.waypoints = takeoff_traj + hover + list(self.waypoints[self.wp_index:])
         self.wp_index = 0
 
     def land(self):
-        """Initiate a landing sequence with a soft, staged descent."""
+        """Initiate a landing sequence with a soft, staged descent, preserving the main route."""
         current_pos = self.state[:3].copy()
         z0 = current_pos[2]
-        # Descend quickly to 1.0m, then slow descent to 0.2m, then very slow to ground
         if z0 > 1.0:
             fast = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(z0, 1.0, 10)]
         else:
@@ -497,5 +511,6 @@ class QuadcopterSimulation:
         final = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(0.2, 0, 10)]
         hover_low = [np.array([current_pos[0], current_pos[1], 0.2])] * 20
         hover_ground = [np.array([current_pos[0], current_pos[1], 0])] * 30
-        self.waypoints = fast + hover_low + slow + final + hover_ground
+        # Insert landing sequence, then continue mission after landing
+        self.waypoints = fast + hover_low + slow + final + hover_ground + list(self.waypoints[self.wp_index+1:])
         self.wp_index = 0
