@@ -15,7 +15,7 @@ class QuadcopterSimulation:
         self.state = np.zeros(12)
         self.state[2] = 0  # start on ground
         self.rotor_speeds = np.zeros(4)
-        self.max_rpm = 6000
+        self.max_rpm = 12000
         self.min_rpm = 0
         self.trajectory = []
         self.wp_index = 0
@@ -25,7 +25,7 @@ class QuadcopterSimulation:
         self.blade_angles = [0.0] * 4
         self.k_thrust = 1.5e-6  # thrust coefficient (N/(rad/s)^2) -- now per unit density
         self.prev_thrust = 0.0
-        self.thrust_alpha = 0.2  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
+        self.thrust_alpha = 1  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
         self.manual_mode = False
         self.manual_rpms = np.zeros(4)
         self.atmosphere_density = 1.225  # kg/m^3, default sea level
@@ -223,15 +223,17 @@ class QuadcopterSimulation:
             self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
         
         # Update rotor_speeds based on actual individual thrusts
-        rpm_smoothing = 0.2  # Smoothing factor (0 = no smoothing, 1 = instant)
+        rpm_smoothing = 1.0  # Set to 1.0 for instant update, no smoothing
         min_thrust = 1e-3    # Minimum thrust to avoid 0 RPM
+        max_omega = 2 * np.pi * self.max_rpm / 60.0
+        max_thrust = self.k_thrust * self.atmosphere_density * (max_omega ** 2)
         for i in range(4):
             thrust = max(self.rotor_thrusts[i], min_thrust)
+            thrust = min(thrust, max_thrust)  # Clip thrust to what is physically possible
             omega = np.sqrt(thrust / (self.k_thrust * self.atmosphere_density))  # rad/s
             rpm = omega * 60.0 / (2 * np.pi)
             rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
-            # Smooth RPM update
-            self.rotor_speeds[i] = (1 - rpm_smoothing) * self.rotor_speeds[i] + rpm_smoothing * rpm
+            self.rotor_speeds[i] = rpm
 
     def position_controller(self, target):
         # PID for position -> desired acceleration
@@ -274,7 +276,10 @@ class QuadcopterSimulation:
         # u: [tau_x, tau_y, thrust, tau_roll, tau_pitch, tau_yaw]
         # State: [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz]
         x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz = self.state
-        Fz = u[2]
+        # Compute actual total thrust from current rotor_speeds
+        omega = 2 * np.pi * self.rotor_speeds / 60.0
+        thrusts = self.k_thrust * self.atmosphere_density * (omega ** 2)
+        Fz = np.sum(thrusts)  # Use actual thrust, not controller's request
         tau_x, tau_y, _, _, _, tau_z = u
         tau_z = 0.0  # Remove any yaw torque
         # Rotation matrix for body to world
