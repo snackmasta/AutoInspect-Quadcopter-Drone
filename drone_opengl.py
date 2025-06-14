@@ -2,10 +2,11 @@ import numpy as np
 import sys
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from OpenGL.GLUT import *
 from queue import SimpleQueue
 import imgui
 from imgui.integrations.opengl import ProgrammablePipelineRenderer
+import glfw
+from imgui.integrations.glfw import GlfwRenderer
 
 # Simulation constants
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
@@ -65,11 +66,6 @@ def rotor_positions(center):
     offsets = np.array([[-L/2, L/2, 0], [L/2, L/2, 0], [L/2, -L/2, 0], [-L/2, -L/2, 0]])
     return center + offsets
 
-def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
-    glWindowPos2f(x, y)
-    for ch in text:
-        glutBitmapCharacter(font, ord(ch))
-
 def draw_ground_grid(size=3, step=0.5):
     glColor3f(0.7, 0.7, 0.7)
     glLineWidth(1)
@@ -83,12 +79,10 @@ def draw_ground_grid(size=3, step=0.5):
     glEnd()
 
 def draw_scene():
-    global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles, imgui_renderer, angle_x, angle_y, angle_z, zoom
-    # Set ImGui display size before starting new frame
+    global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles, angle_x, angle_y, angle_z, zoom
     io = imgui.get_io()
     io.display_size = (window_width, window_height)
-    # Start new ImGui frame
-    imgui.new_frame()
+    # Start new ImGui frame is now handled in main loop
 
     # ImGui window for camera controls
     imgui.begin("Camera Controls")
@@ -163,12 +157,9 @@ def draw_scene():
     glVertex3f(*waypoints[wp_index])
     glEnd()
 
-    # Render ImGui on top
-    imgui.render()
-    imgui_renderer.render(imgui.get_draw_data())
-    glutSwapBuffers()
+    # No glutSwapBuffers needed, GLFW handles this in main loop
 
-def update(value):
+def update(_):
     global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles
     if not spinup_done:
         rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
@@ -185,8 +176,6 @@ def update(value):
     # Update blade angles based on RPM
     for i in range(4):
         blade_angles[i] = (blade_angles[i] + rotor_speeds[i] * 360.0 / 60.0 * dt) % 360
-    glutPostRedisplay()
-    glutTimerFunc(int(dt * 1000), update, 0)
 
 def reshape(width, height):
     global window_width, window_height
@@ -197,44 +186,43 @@ def reshape(width, height):
     gluPerspective(45, width / float(height), 0.1, 100.0)
     glMatrixMode(GL_MODELVIEW)
 
-def keyboard(key, x, y):
-    global zoom
-    if key == b'+':
-        zoom /= 1.1
-    elif key == b'-':
-        zoom *= 1.1
-    elif key == b'q':
-        sys.exit()
-    glutPostRedisplay()
-
-def special_keys(key, x, y):
-    global angle_x, angle_y
-    if key == GLUT_KEY_LEFT:
-        angle_y -= 5
-    elif key == GLUT_KEY_RIGHT:
-        angle_y += 5
-    elif key == GLUT_KEY_UP:
-        angle_x -= 5
-    elif key == GLUT_KEY_DOWN:
-        angle_x += 5
-    glutPostRedisplay()
-
 def main():
-    global imgui_renderer
-    glutInit(sys.argv)
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
-    glutInitWindowSize(window_width, window_height)
-    glutCreateWindow(b"Quadcopter PyOpenGL Simulation")
+    global window_width, window_height, angle_x, angle_y, angle_z, zoom
+    if not glfw.init():
+        print("Could not initialize GLFW")
+        return
+    window = glfw.create_window(window_width, window_height, "Quadcopter PyOpenGL Simulation", None, None)
+    if not window:
+        glfw.terminate()
+        print("Could not create GLFW window")
+        return
+    glfw.make_context_current(window)
     glEnable(GL_DEPTH_TEST)
     glClearColor(1, 1, 1, 1)
     imgui.create_context()
-    imgui_renderer = ProgrammablePipelineRenderer()
-    glutDisplayFunc(draw_scene)
-    glutReshapeFunc(reshape)
-    glutKeyboardFunc(keyboard)
-    glutSpecialFunc(special_keys)
-    glutTimerFunc(10, update, 0)
-    glutMainLoop()
+    impl = GlfwRenderer(window)
+
+    while not glfw.window_should_close(window):
+        glfw.poll_events()
+        impl.process_inputs()
+        width, height = glfw.get_framebuffer_size(window)
+        window_width, window_height = width, height
+        glViewport(0, 0, width, height)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45, width / float(height), 0.1, 100.0)
+        glMatrixMode(GL_MODELVIEW)
+        imgui.new_frame()  # Start new ImGui frame here
+        update(0)  # Call update logic
+        draw_scene()
+        imgui.render()  # End ImGui frame here
+        draw_data = imgui.get_draw_data()
+        if draw_data is not None:
+            impl.render(draw_data)
+        glfw.swap_buffers(window)
+
+    impl.shutdown()
+    glfw.terminate()
 
 if __name__ == "__main__":
     main()
