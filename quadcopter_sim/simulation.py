@@ -1,6 +1,6 @@
 import numpy as np
 from .main_trajectory import get_main_trajectory
-from .position_controller import position_controller
+from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 
 class QuadcopterSimulation:
@@ -61,7 +61,9 @@ class QuadcopterSimulation:
 
     def _init_waypoints(self):
         wps = get_main_trajectory()
-        self.waypoints = self._insert_hover_after_sharp_turns(wps, hover_steps=60, angle_threshold_deg=30)
+        # Remove hover insertion after sharp turns for continuous movement
+        self.waypoints = wps
+        self.hover_indices = set()
 
     def get_hover_rpm(self):
         """Calculate the RPM needed for each rotor to hover, based on physical parameters and atmosphere density."""
@@ -216,31 +218,24 @@ class QuadcopterSimulation:
                 del self.landing_index
             return
 
-        # Simple PID to follow waypoints
-        # Increase threshold for switching waypoints to avoid getting stuck
+        # Simple LQR to follow waypoints (replace PID)
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
             self.wp_index += 1
-        target = self.waypoints[self.wp_index]
-        pos = self.state[:3]
-        vel = self.state[3:6]
-        # If only z changes, treat as vertical maneuver
-        if np.allclose(target[:2], pos[:2], atol=1e-3) and abs(target[2] - pos[2]) > 1e-2:
-            dz = target[2] - pos[2]
-            max_vz = 0.7
-            # Avoid division by zero
-            if delta_time > 1e-6:
-                target_vz = np.clip(dz / delta_time, -max_vz, max_vz)
-            else:
-                target_vz = 0.0
-            acc_z = self.vertical_speed_pid(target_vz, delta_time)
-            u = np.zeros(6)
-            thrust = self.m * (acc_z + self.g)
-            # Clamp thrust to valid range
-            if not np.isfinite(thrust):
-                thrust = self.m * self.g
-            u[2] = np.clip(thrust, 0, 4 * self.max_rpm)
+        target_pos = self.waypoints[self.wp_index]
+        # Estimate desired velocity (finite difference to next waypoint)
+        if self.wp_index < len(self.waypoints) - 1:
+            next_pos = self.waypoints[self.wp_index + 1]
+            desired_vel = (next_pos - target_pos) / max(delta_time, 1e-2)
+            # Limit velocity for smoothness
+            max_speed = 2.0
+            speed = np.linalg.norm(desired_vel)
+            if speed > max_speed:
+                desired_vel = desired_vel * (max_speed / speed)
         else:
-            u = self.position_controller(target)
+            desired_vel = np.zeros(3)
+        # Build 6D target for LQR: [x, y, z, vx, vy, vz]
+        lqr_target = np.hstack((target_pos, desired_vel))
+        u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m)
         
         # Calculate individual rotor thrusts for debug
         rotor_thrusts = self.calculate_rotor_thrusts(u)
@@ -255,7 +250,7 @@ class QuadcopterSimulation:
         if self.debug_counter % 50 == 0:
             print(f"WP: {self.wp_index}/{len(self.waypoints)-1} | "
                   f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}] | "
-                  f"Target: [{target[0]:.1f}, {target[1]:.1f}, {target[2]:.1f}]")
+                  f"Target: [{target_pos[0]:.1f}, {target_pos[1]:.1f}, {target_pos[2]:.1f}]")
             print(f"Control: Roll={u[0]:.2f}, Pitch={u[1]:.2f}, Thrust={u[2]:.1f}, Yaw={u[5]:.2f}")
             print(f"Rotor Thrusts: T1={rotor_thrusts[0]:.1f}, T2={rotor_thrusts[1]:.1f}, "
                   f"T3={rotor_thrusts[2]:.1f}, T4={rotor_thrusts[3]:.1f}")

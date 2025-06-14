@@ -1,23 +1,26 @@
 import numpy as np
 
-# Reduced gains to minimize oscillation
+# PID gains (tuned for minimal oscillation)
 # Position controller gains
-KP_POS = 1.5  # was 3.0
-KD_POS = 3.0  # was 2.0
+KP_POS = 0.8  # Lowered for smoother response
+KD_POS = 5.0  # Increased for stronger damping
 # Attitude controller gains
-KP_ATT = 5.0  # was 8.0
-KD_ATT = 3.0  # was 2.0
+KP_ATT = 3.0  # Lowered for less aggressive attitude
+KD_ATT = 2.0  # Lowered for less aggressive attitude
 # Yaw controller gains
-KP_YAW = 2.0  # was 4.0
-KD_YAW = 1.5  # was 1.0
+KP_YAW = 1.2  # Lowered for smoother yaw
+KD_YAW = 1.0
 
 def position_controller(state, target, hover_indices=None, wp_index=None, waypoints=None, yaw_control_enabled=True, g=9.81, m=1.0):
     pos, vel = state[:3], state[3:6]
     roll, pitch, yaw = state[6:9]
     wx, wy, wz = state[9:12]
-    # Use new gains
+    # Use tuned gains
     kp, kd = KP_POS, KD_POS
     acc_des = kp * (target - pos) - kd * vel
+    # Limit desired acceleration to avoid aggressive commands
+    acc_max = 6.0  # m/s^2
+    acc_des = np.clip(acc_des, -acc_max, acc_max)
     acc_des[2] += g
     dx = target[0] - pos[0]
     dy = target[1] - pos[1]
@@ -29,10 +32,10 @@ def position_controller(state, target, hover_indices=None, wp_index=None, waypoi
     acc_body_y = -s_yaw * acc_des[0] + c_yaw * acc_des[1]
     pitch_des = acc_body_x / g
     roll_des  = -acc_body_y / g
-    max_angle = np.pi / 6  # 30 degrees
+    max_angle = np.pi / 8  # 22.5 degrees, more conservative
     pitch_des = np.clip(pitch_des, -max_angle, max_angle)
     roll_des = np.clip(roll_des, -max_angle, max_angle)
-    # Use new attitude gains
+    # Use tuned attitude gains
     kp_att, kd_att = KP_ATT, KD_ATT
     tau_x = kp_att * (roll_des - roll) - kd_att * wx
     tau_y = kp_att * (pitch_des - pitch) - kd_att * wy
@@ -57,7 +60,7 @@ def position_controller(state, target, hover_indices=None, wp_index=None, waypoi
             yaw_error -= 2 * np.pi
         elif cross > 0 and yaw_error < 0:
             yaw_error += 2 * np.pi
-        # Use new yaw gains
+        # Use tuned yaw gains
         kp_yaw = KP_YAW
         kd_yaw = KD_YAW
         tau_z = kp_yaw * yaw_error - kd_yaw * wz

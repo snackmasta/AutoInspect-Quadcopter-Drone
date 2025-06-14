@@ -2,13 +2,17 @@ import numpy as np
 
 def get_main_trajectory():
     altitude = 6.0
-    takeoff = [np.array([0, 0, z]) for z in np.linspace(0, altitude, 5)]
-    hover = [np.array([0, 0, altitude])] * 20  # Shorter hover
-    move1 = [np.array([x, x, altitude]) for x in np.linspace(0, 5, 10)]
-    hover2 = [np.array([5, 5, altitude])] * 10
-    move2 = [np.array([x, 5, altitude]) for x in np.linspace(5, -5, 10)]
-    hover3 = [np.array([-5, 5, altitude])] * 10
-    move3 = [np.array([x, y, altitude]) for x, y in zip(np.linspace(-5, 0, 10), np.linspace(5, 0, 10))]
-    hover4 = [np.array([0, 0, altitude])] * 10
-    wps = takeoff + hover + move1 + hover2 + move2 + hover3 + move3 + hover4
+    takeoff = [np.array([0, 0, z]) for z in np.linspace(0, altitude, 8)]
+    # Segitiga: tiga titik utama
+    p1 = np.array([0, 0, altitude])
+    p2 = np.array([20, 0, altitude])
+    p3 = np.array([10, 17.32, altitude])  # 17.32 ≈ 20 * sin(60°)
+    # Trajectory: p1 -> p2 -> p3 -> p1
+    n_points = 40
+    leg1 = [p1 + (p2 - p1) * t for t in np.linspace(0, 1, n_points)]
+    leg2 = [p2 + (p3 - p2) * t for t in np.linspace(0, 1, n_points)]
+    leg3 = [p3 + (p1 - p3) * t for t in np.linspace(0, 1, n_points)]
+    wps = takeoff + leg1 + leg2 + leg3
+    # Kembali ke home
+    wps.append(np.array([0, 0, altitude]))
     return wps
