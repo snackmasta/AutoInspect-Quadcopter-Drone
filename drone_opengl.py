@@ -7,6 +7,7 @@ import imgui
 from imgui.integrations.opengl import ProgrammablePipelineRenderer
 import glfw
 from imgui.integrations.glfw import GlfwRenderer
+import time
 
 # Simulation constants
 g, m, dt, L = 9.81, 0.5, 0.02, 0.6
@@ -54,12 +55,12 @@ def control_input(state, target):
     rotor_speeds[:] = base_speed + np.random.randn(4) * 100
     return m * acc_des
 
-def update_state(state, u):
+def update_state(state, u, delta_time):
     pos, vel = state[:3], state[3:]
     acc = u / m
     acc[2] -= g
-    vel += acc * dt
-    pos += vel * dt
+    vel += acc * delta_time
+    pos += vel * delta_time
     return np.hstack((pos, vel))
 
 def rotor_positions(center):
@@ -159,7 +160,7 @@ def draw_scene():
 
     # No glutSwapBuffers needed, GLFW handles this in main loop
 
-def update(_):
+def update(_, delta_time):
     global state, wp_index, rotor_speeds, spinup_done, trajectory, blade_angles
     if not spinup_done:
         rotor_speeds[:] = np.minimum(rotor_speeds + spinup_step, startup_rpm)
@@ -171,11 +172,11 @@ def update(_):
             wp_index += 1
         else:
             u = control_input(state, target)
-            state[:] = update_state(state, u)
+            state[:] = update_state(state, u, delta_time)
             trajectory.append(state[:3].copy())
     # Update blade angles based on RPM
     for i in range(4):
-        blade_angles[i] = (blade_angles[i] + rotor_speeds[i] * 360.0 / 60.0 * dt) % 360
+        blade_angles[i] = (blade_angles[i] + rotor_speeds[i] * 360.0 / 60.0 * delta_time) % 360
 
 def reshape(width, height):
     global window_width, window_height
@@ -202,7 +203,11 @@ def main():
     imgui.create_context()
     impl = GlfwRenderer(window)
 
+    last_time = time.time()
     while not glfw.window_should_close(window):
+        current_time = time.time()
+        delta_time = current_time - last_time
+        last_time = current_time
         glfw.poll_events()
         impl.process_inputs()
         width, height = glfw.get_framebuffer_size(window)
@@ -213,7 +218,7 @@ def main():
         gluPerspective(45, width / float(height), 0.1, 100.0)
         glMatrixMode(GL_MODELVIEW)
         imgui.new_frame()  # Start new ImGui frame here
-        update(0)  # Call update logic
+        update(0, delta_time)  # Pass delta_time to update
         draw_scene()
         imgui.render()  # End ImGui frame here
         draw_data = imgui.get_draw_data()
