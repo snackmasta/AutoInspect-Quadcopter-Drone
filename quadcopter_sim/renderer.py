@@ -63,6 +63,47 @@ class Renderer:
             altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
             imgui.plot_lines("Altitude (last 100 steps)", altitudes, graph_size=(300, 80))
         imgui.end()
+        # Visual, at-a-glance situational awareness panel
+        imgui.set_next_window_position(self.window_width - 370, 10)
+        imgui.set_next_window_size(360, 0)
+        imgui.push_style_var(imgui.STYLE_WINDOW_ROUNDING, 8)
+        imgui.push_style_var(imgui.STYLE_WINDOW_BORDERSIZE, 1)
+        imgui.push_style_var(imgui.STYLE_WINDOW_PADDING, (10, 8))
+        imgui.push_style_var(imgui.STYLE_ALPHA, 0.92)
+        imgui.begin("Situational Awareness", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_TITLE_BAR)
+        pos, vel = sim.state[:3], sim.state[3:]
+        # Altitude gauge
+        imgui.text("Altitude")
+        imgui.progress_bar(pos[2] / 5.0, size=(320, 18), overlay=f"{pos[2]:.2f} m")
+        # Ground speed gauge
+        imgui.text("Ground Speed")
+        ground_speed = np.linalg.norm(vel[:2])
+        imgui.progress_bar(min(ground_speed / 5.0, 1.0), size=(320, 18), overlay=f"{ground_speed:.2f} m/s")
+        # Vertical speed bar (centered at 0)
+        imgui.text("Vertical Speed")
+        vs = vel[2]
+        imgui.progress_bar((vs + 2.5) / 5.0, size=(320, 18), overlay=f"{vs:+.2f} m/s")
+        # Distance to waypoint as a radial progress
+        imgui.text("Distance to Waypoint")
+        dist = np.linalg.norm(pos - sim.waypoints[sim.wp_index])
+        imgui.progress_bar(min(dist / 5.0, 1.0), size=(320, 18), overlay=f"{dist:.2f} m")
+        # Rotor RPM as mini bar graphs
+        imgui.text("Rotor RPM")
+        for i, rpm in enumerate(sim.rotor_speeds):
+            imgui.progress_bar(min(rpm / 6000.0, 1.0), size=(75, 12), overlay=f"{int(rpm)}")
+            if i < 3:
+                imgui.same_line()
+        imgui.new_line()
+        # Waypoint progress as a horizontal bar
+        imgui.text("Mission Progress")
+        imgui.progress_bar((sim.wp_index + 1) / len(sim.waypoints), size=(320, 18), overlay=f"{sim.wp_index+1}/{len(sim.waypoints)}")
+        # Altitude plot at the bottom
+        if len(sim.trajectory) > 1:
+            altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
+            imgui.text("Recent Altitude")
+            imgui.plot_lines("", altitudes, graph_size=(320, 60))
+        imgui.pop_style_var(4)
+        imgui.end()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
