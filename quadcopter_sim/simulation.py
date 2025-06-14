@@ -4,7 +4,7 @@ class QuadcopterSimulation:
     def __init__(self):
         # Physical parameters
         self.g = 9.81
-        self.m = 5  # mass (kg)
+        self.m = 0.5  # mass (kg)
         self.L = 0.6  # arm length (m)
         # More realistic inertia for a 5kg, 0.6m quadcopter
         # Ixx ≈ Iyy ≈ 0.6, Izz ≈ 0.3 (kg*m^2)
@@ -19,13 +19,16 @@ class QuadcopterSimulation:
         self.min_rpm = 0
         self.trajectory = []
         self.wp_index = 0
-        self.spinup_done = True  # Always true for physics-based sim
+        self.spinup_done = False  # Start as False, will ramp up
+        self.spinup_time = 2.0    # seconds for ramp-up
+        self.spinup_timer = 0.0   # timer for ramp-up
         self.blade_angles = [0.0] * 4
-        self.k_thrust = 1.5e-6  # thrust coefficient (N/(rad/s)^2), typical for small drones
+        self.k_thrust = 1.5e-6  # thrust coefficient (N/(rad/s)^2) -- now per unit density
         self.prev_thrust = 0.0
         self.thrust_alpha = 0.2  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
         self.manual_mode = False
         self.manual_rpms = np.zeros(4)
+        self.atmosphere_density = 1.225  # kg/m^3, default sea level
         self._init_waypoints()
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
@@ -71,12 +74,12 @@ class QuadcopterSimulation:
         self.waypoints = self._insert_hover_after_sharp_turns(wps, hover_steps=60, angle_threshold_deg=30)
 
     def get_hover_rpm(self):
-        """Calculate the RPM needed for each rotor to hover, based on physical parameters."""
+        """Calculate the RPM needed for each rotor to hover, based on physical parameters and atmosphere density."""
         hover_thrust = self.m * self.g
         thrust_per_motor = hover_thrust / 4
-        # T = k_thrust * (omega^2), omega in rad/s
-        # omega_hover = sqrt(T / k_thrust)
-        omega_hover = np.sqrt(thrust_per_motor / self.k_thrust)
+        # T = k_thrust * density * (omega^2), omega in rad/s
+        # omega_hover = sqrt(T / (k_thrust * density))
+        omega_hover = np.sqrt(thrust_per_motor / (self.k_thrust * self.atmosphere_density))
         rpm_hover = omega_hover * 60.0 / (2 * np.pi)
         return rpm_hover
 
@@ -104,6 +107,17 @@ class QuadcopterSimulation:
         if delta_time is None or delta_time <= 1e-6:
             return
 
+        if not self.spinup_done:
+            # Rotor ramp-up before takeoff
+            self.spinup_timer += delta_time
+            ramp_ratio = min(self.spinup_timer / self.spinup_time, 1.0)
+            hover_rpm = self.get_hover_rpm()
+            self.rotor_speeds[:] = hover_rpm * ramp_ratio
+            if ramp_ratio >= 1.0:
+                self.spinup_done = True
+            # Optionally, keep the rest of the step logic disabled until spinup is done
+            return
+
         if self.manual_mode:
             # Optionally print hover RPM for user
             if not hasattr(self, '_hover_rpm_printed'):
@@ -116,7 +130,7 @@ class QuadcopterSimulation:
             # For visualization, update blade angles
             for i in range(4):
                 self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360            # Physics update: use the sum of manual thrusts and compute torques
-            thrusts = self.k_thrust * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
+            thrusts = self.k_thrust * self.atmosphere_density * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
             total_thrust = np.sum(thrusts)
             
             # Store individual thrusts for visualization
@@ -213,7 +227,7 @@ class QuadcopterSimulation:
         min_thrust = 1e-3    # Minimum thrust to avoid 0 RPM
         for i in range(4):
             thrust = max(self.rotor_thrusts[i], min_thrust)
-            omega = np.sqrt(thrust / self.k_thrust)  # rad/s
+            omega = np.sqrt(thrust / (self.k_thrust * self.atmosphere_density))  # rad/s
             rpm = omega * 60.0 / (2 * np.pi)
             rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
             # Smooth RPM update
@@ -231,22 +245,7 @@ class QuadcopterSimulation:
         dy = target[1] - pos[1]
         horizontal_distance = np.sqrt(dx**2 + dy**2)
 
-        # --- Lookahead Yaw Logic with Stabilize-on-Hover ---
-        desired_yaw = None
-        if hasattr(self, 'hover_indices') and self.wp_index in self.hover_indices:
-            # During hover after sharp turn, hold current yaw
-            desired_yaw = yaw
-        else:
-            if hasattr(self, 'waypoints') and hasattr(self, 'wp_index'):
-                if self.wp_index < len(self.waypoints) - 1:
-                    next_wp = self.waypoints[self.wp_index + 1]
-                    lookahead_dx = next_wp[0] - target[0]
-                    lookahead_dy = next_wp[1] - target[1]
-                    if abs(lookahead_dx) > 1e-3 or abs(lookahead_dy) > 1e-3:
-                        desired_yaw = np.arctan2(lookahead_dy, lookahead_dx)
-        if desired_yaw is None:
-            desired_yaw = np.arctan2(dy, dx)
-
+        # Remove yaw control: do not compute or use desired_yaw
         # Transform desired acceleration from world to body frame using current yaw
         acc_des_xy = acc_des[:2]
         c_yaw = np.cos(yaw)
@@ -261,27 +260,14 @@ class QuadcopterSimulation:
         kp_att, kd_att = 8.0, 2.0
         tau_x = kp_att * (roll_des - roll) - kd_att * wx
         tau_y = kp_att * (pitch_des - pitch) - kd_att * wy
-        # Yaw control: always lead with the next segment
-        yaw_error = (desired_yaw - yaw + np.pi) % (2 * np.pi) - np.pi
-        heading_vec = np.array([np.cos(yaw), np.sin(yaw)])
-        target_vec = np.array([np.cos(desired_yaw), np.sin(desired_yaw)])
-        cross = heading_vec[0]*target_vec[1] - heading_vec[1]*target_vec[0]
-        if cross < 0 and yaw_error > 0:
-            yaw_error -= 2 * np.pi
-        elif cross > 0 and yaw_error < 0:
-            yaw_error += 2 * np.pi
-        kp_yaw = 4.0
-        kd_yaw = 1.0
-        tau_z = kp_yaw * yaw_error - kd_yaw * wz
-        
+        # No yaw control: tau_z = 0
+        tau_z = 0.0
         # Total thrust (vertical component)
         thrust = self.m * acc_des[2]
         thrust = np.clip(thrust, 0, 4 * self.max_rpm)
-        
         # Apply smoothing to thrust to reduce jitter
         thrust = self.thrust_alpha * thrust + (1 - self.thrust_alpha) * self.prev_thrust
         self.prev_thrust = thrust
-        
         return np.array([tau_x, tau_y, thrust, 0, 0, tau_z])
 
     def physics_update(self, u, dt):
@@ -290,6 +276,7 @@ class QuadcopterSimulation:
         x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz = self.state
         Fz = u[2]
         tau_x, tau_y, _, _, _, tau_z = u
+        tau_z = 0.0  # Remove any yaw torque
         # Rotation matrix for body to world
         cr, sr = np.cos(roll), np.sin(roll)
         cp, sp = np.cos(pitch), np.sin(pitch)
@@ -360,6 +347,9 @@ class QuadcopterSimulation:
         self.prev_thrust = 0.0  # reset thrust smoothing
         self.manual_mode = False
         self.manual_rpms[:] = 0
+        self.spinup_done = False
+        self.spinup_timer = 0.0
+        self.rotor_speeds[:] = 0
 
     def rotor_positions(self):
         # Return positions of the 4 rotors based on current state (x, y, z, roll, pitch, yaw)
@@ -447,7 +437,7 @@ class QuadcopterSimulation:
         k_yaw = 1e-7  # drag torque coefficient
         d_roll = tau_x / (2 * L) if L > 0 else 0
         d_pitch = tau_y / (2 * L) if L > 0 else 0
-        d_yaw = -tau_z / (4 * k_yaw) if k_yaw > 0 else 0
+        d_yaw = 0.0  # Remove yaw differential
         T1 = T_base + d_roll + d_pitch + d_yaw  # Front Left
         T2 = T_base + d_roll - d_pitch - d_yaw  # Front Right
         T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
