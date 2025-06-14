@@ -1,5 +1,7 @@
 import numpy as np
 from .main_trajectory import get_main_trajectory
+from .position_controller import position_controller
+from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 
 class QuadcopterSimulation:
     def __init__(self):
@@ -158,6 +160,62 @@ class QuadcopterSimulation:
             self.trajectory.append(self.state[:3].copy())
             return
 
+        # --- LANDING MODE ---
+        if hasattr(self, 'is_landing') and self.is_landing and hasattr(self, 'landing_traj') and self.landing_traj:
+            # Follow landing trajectory
+            if not hasattr(self, 'landing_index'):
+                self.landing_index = 0
+            if self.landing_index < len(self.landing_traj) - 1 and np.linalg.norm(self.state[:3] - self.landing_traj[self.landing_index]) < 0.7:
+                self.landing_index += 1
+            target = self.landing_traj[self.landing_index]
+            # Use position controller for landing
+            u = self.position_controller(target)
+            
+            # Calculate individual rotor thrusts for debug
+            rotor_thrusts = self.calculate_rotor_thrusts(u)
+            self.rotor_thrusts = rotor_thrusts  # Store for debug access
+            
+            # Debug output every 50 steps (reduce spam)
+            if hasattr(self, 'debug_counter'):
+                self.debug_counter += 1
+            else:
+                self.debug_counter = 0
+                
+            if self.debug_counter % 50 == 0:
+                print(f"LANDING MODE")
+                print(f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}]")
+                print(f"Target: [{target[0]:.1f}, {target[1]:.1f}, {target[2]:.1f}]")
+                print(f"Control: Roll={u[0]:.2f}, Pitch={u[1]:.2f}, Thrust={u[2]:.1f}, Yaw={u[5]:.2f}")
+                print(f"Rotor Thrusts: T1={rotor_thrusts[0]:.1f}, T2={rotor_thrusts[1]:.1f}, "
+                      f"T3={rotor_thrusts[2]:.1f}, T4={rotor_thrusts[3]:.1f}")
+                print(f"Angles: Roll={np.degrees(self.state[6]):.1f}°, Pitch={np.degrees(self.state[7]):.1f}°, "
+                      f"Yaw={np.degrees(self.state[8]):.1f}°")
+                print("---")
+            
+            self.physics_update(u, delta_time)
+            self.trajectory.append(self.state[:3].copy())
+            for i in range(4):
+                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
+            # Update rotor_speeds based on actual individual thrusts
+            rpm_smoothing = 1.0
+            min_thrust = 1e-3
+            max_omega = 2 * np.pi * self.max_rpm / 60.0
+            max_thrust = self.k_thrust * self.atmosphere_density * (max_omega ** 2)
+            for i in range(4):
+                thrust = max(self.rotor_thrusts[i], min_thrust)
+                thrust = min(thrust, max_thrust)
+                omega = np.sqrt(thrust / (self.k_thrust * self.atmosphere_density))
+                rpm = omega * 60.0 / (2 * np.pi)
+                rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
+                self.rotor_speeds[i] = rpm
+            # If at the end of landing trajectory, stay at last point and exit landing mode
+            if self.landing_index >= len(self.landing_traj) - 1:
+                self.landing_index = len(self.landing_traj) - 1
+                self.is_landing = False
+                del self.landing_traj
+                del self.landing_index
+            return
+
         # Simple PID to follow waypoints
         # Increase threshold for switching waypoints to avoid getting stuck
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
@@ -224,70 +282,16 @@ class QuadcopterSimulation:
             self.rotor_speeds[i] = rpm
 
     def position_controller(self, target):
-        # PID for position -> desired acceleration
-        pos, vel = self.state[:3], self.state[3:6]
-        roll, pitch, yaw = self.state[6:9]
-        wx, wy, wz = self.state[9:12]
-        kp, kd = 3.0, 2.0
-        acc_des = kp * (target - pos) - kd * vel
-        acc_des[2] += self.g
-        dx = target[0] - pos[0]
-        dy = target[1] - pos[1]
-        horizontal_distance = np.sqrt(dx**2 + dy**2)
-
-        # Remove yaw control: do not compute or use desired_yaw
-        # Transform desired acceleration from world to body frame using current yaw
-        acc_des_xy = acc_des[:2]
-        c_yaw = np.cos(yaw)
-        s_yaw = np.sin(yaw)
-        acc_body_x =  c_yaw * acc_des[0] + s_yaw * acc_des[1]
-        acc_body_y = -s_yaw * acc_des[0] + c_yaw * acc_des[1]
-        pitch_des = acc_body_x / self.g
-        roll_des  = -acc_body_y / self.g
-        max_angle = np.pi / 6  # 30 degrees
-        pitch_des = np.clip(pitch_des, -max_angle, max_angle)
-        roll_des = np.clip(roll_des, -max_angle, max_angle)
-        kp_att, kd_att = 8.0, 2.0
-        tau_x = kp_att * (roll_des - roll) - kd_att * wx
-        tau_y = kp_att * (pitch_des - pitch) - kd_att * wy
-        # Toggleable yaw control
-        if hasattr(self, 'yaw_control_enabled') and self.yaw_control_enabled:
-            # Yaw control enabled: compute desired yaw and tau_z as before
-            # --- Lookahead Yaw Logic with Stabilize-on-Hover ---
-            desired_yaw = None
-            if hasattr(self, 'hover_indices') and self.wp_index in self.hover_indices:
-                desired_yaw = yaw
-            else:
-                if hasattr(self, 'waypoints') and hasattr(self, 'wp_index'):
-                    if self.wp_index < len(self.waypoints) - 1:
-                        next_wp = self.waypoints[self.wp_index + 1]
-                        lookahead_dx = next_wp[0] - target[0]
-                        lookahead_dy = next_wp[1] - target[1]
-                        if abs(lookahead_dx) > 1e-3 or abs(lookahead_dy) > 1e-3:
-                            desired_yaw = np.arctan2(lookahead_dy, lookahead_dx)
-            if desired_yaw is None:
-                desired_yaw = np.arctan2(dy, dx)
-            heading_vec = np.array([np.cos(yaw), np.sin(yaw)])
-            target_vec = np.array([np.cos(desired_yaw), np.sin(desired_yaw)])
-            yaw_error = desired_yaw - yaw
-            cross = heading_vec[0]*target_vec[1] - heading_vec[1]*target_vec[0]
-            if cross < 0 and yaw_error > 0:
-                yaw_error -= 2 * np.pi
-            elif cross > 0 and yaw_error < 0:
-                yaw_error += 2 * np.pi
-            kp_yaw = 4.0
-            kd_yaw = 1.0
-            tau_z = kp_yaw * yaw_error - kd_yaw * wz
-        else:
-            # Yaw control disabled
-            tau_z = 0.0
-        # Total thrust (vertical component)
-        thrust = self.m * acc_des[2]
-        thrust = np.clip(thrust, 0, 4 * self.max_rpm)
-        # Apply smoothing to thrust to reduce jitter
-        thrust = self.thrust_alpha * thrust + (1 - self.thrust_alpha) * self.prev_thrust
-        self.prev_thrust = thrust
-        return np.array([tau_x, tau_y, thrust, 0, 0, tau_z])
+        return position_controller(
+            self.state,
+            target,
+            hover_indices=getattr(self, 'hover_indices', None),
+            wp_index=getattr(self, 'wp_index', None),
+            waypoints=getattr(self, 'waypoints', None),
+            yaw_control_enabled=getattr(self, 'yaw_control_enabled', True),
+            g=self.g,
+            m=self.m
+        )
 
     def physics_update(self, u, dt):
         # u: [tau_x, tau_y, thrust, tau_roll, tau_pitch, tau_yaw]
@@ -488,29 +492,10 @@ class QuadcopterSimulation:
         return thrusts
 
     def takeoff(self, target_altitude=3.0):
-        """Initiate a takeoff sequence to a specified altitude, preserving the main route."""
-        current_pos = self.state[:3].copy()
-        takeoff_traj = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(current_pos[2], target_altitude, 20)]
-        hover = [np.array([current_pos[0], current_pos[1], target_altitude])] * 50
-        # Insert takeoff/hover before current waypoint, then continue mission
-        self.waypoints = takeoff_traj + hover + list(self.waypoints[self.wp_index:])
-        self.wp_index = 0
+        self.waypoints, self.wp_index = takeoff_fn(self.state, self.waypoints, self.wp_index, target_altitude)
 
     def land(self):
-        """Initiate a landing sequence with a soft, staged descent, preserving the main route."""
-        current_pos = self.state[:3].copy()
-        z0 = current_pos[2]
-        if z0 > 1.0:
-            fast = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(z0, 1.0, 10)]
-        else:
-            fast = []
-        if z0 > 0.2:
-            slow = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(1.0, 0.2, 10)]
-        else:
-            slow = []
-        final = [np.array([current_pos[0], current_pos[1], z]) for z in np.linspace(0.2, 0, 10)]
-        hover_low = [np.array([current_pos[0], current_pos[1], 0.2])] * 20
-        hover_ground = [np.array([current_pos[0], current_pos[1], 0])] * 30
-        # Insert landing sequence, then continue mission after landing
-        self.waypoints = fast + hover_low + slow + final + hover_ground + list(self.waypoints[self.wp_index+1:])
-        self.wp_index = 0
+        # Store landing trajectory separately, do not overwrite main waypoints
+        self.landing_traj = land_fn(self.state)
+        # Optionally, set a flag to indicate landing mode
+        self.is_landing = True

@@ -178,7 +178,7 @@ class Renderer:
         cam_z = center[2] + r * np.sin(pitch)
         gluLookAt(cam_x, cam_y, cam_z, center[0], center[1], center[2], 0, 0, 1)
         # self.draw_ground_grid()  # Remove or comment out this line to hide the solid green environment
-        glColor3f(1, 1, 0)
+        glColor3f(0, 0, 1)  # Changed to blue
         glPointSize(8)
         glBegin(GL_POINTS)
         for wp in sim.waypoints:
