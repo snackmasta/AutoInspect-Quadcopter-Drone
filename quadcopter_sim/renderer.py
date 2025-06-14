@@ -66,6 +66,12 @@ class Renderer:
         imgui.set_next_window_position(10, 10)
         imgui.set_next_window_size(350, 500)
         imgui.begin("Mission Control", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+        if imgui.button("Take Off"):
+            sim.takeoff(target_altitude=3.0)
+        imgui.same_line()
+        if imgui.button("Land"):
+            sim.land()
+        imgui.separator()
         if imgui.button("Pause"): pass
         imgui.same_line()
         if imgui.button("Resume"): pass
