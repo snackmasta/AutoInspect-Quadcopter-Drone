@@ -268,6 +268,13 @@ class QuadcopterSimulation:
         thrust_world = R @ thrust_body
         # Linear acceleration
         a = thrust_world / self.m - np.array([0, 0, self.g])
+        # --- Ground friction ---
+        if z <= 0.01:
+            mu = 2.0  # friction coefficient (tune as needed)
+            friction_ax = -mu * vx
+            friction_ay = -mu * vy
+            a[0] += friction_ax
+            a[1] += friction_ay
         vx += a[0] * dt
         vy += a[1] * dt
         vz += a[2] * dt
@@ -276,6 +283,10 @@ class QuadcopterSimulation:
         z = max(0, z + vz * dt)  # don't go below ground        # Angular acceleration (Euler's equation)
         omega = np.array([wx, wy, wz])
         tau = np.array([tau_x, tau_y, tau_z])
+        # --- Air drag torque ---
+        k_drag = 0.15  # drag coefficient (tune as needed)
+        tau_drag = -k_drag * omega
+        tau += tau_drag
         omega_dot = self.invI @ (tau - np.cross(omega, self.I @ omega))
         wx += omega_dot[0] * dt
         wy += omega_dot[1] * dt
@@ -286,12 +297,10 @@ class QuadcopterSimulation:
         cr, sr = np.cos(roll), np.sin(roll)
         cp, sp = np.cos(pitch), np.sin(pitch)
         tp = np.tan(pitch)
-        
         # Avoid singularity at pitch = ±90 degrees
         if abs(cp) < 1e-6:
             cp = 1e-6 * np.sign(cp)
             tp = sp / cp
-        
         # Kinematic equations: [roll_dot, pitch_dot, yaw_dot] = T * [wx, wy, wz]
         T = np.array([
             [1, sr * tp, cr * tp],

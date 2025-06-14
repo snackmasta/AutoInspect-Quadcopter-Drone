@@ -162,7 +162,7 @@ class Renderer:
         cam_y = center[1] + r * np.cos(pitch) * np.cos(yaw)
         cam_z = center[2] + r * np.sin(pitch)
         gluLookAt(cam_x, cam_y, cam_z, center[0], center[1], center[2], 0, 0, 1)
-        self.draw_ground_grid()
+        # self.draw_ground_grid()  # Remove or comment out this line to hide the solid green environment
         glColor3f(1, 1, 0)
         glPointSize(8)
         glBegin(GL_POINTS)
@@ -192,11 +192,18 @@ class Renderer:
         for i, r in enumerate(rotors):
             glPushMatrix()
             glTranslatef(r[0], r[1], r[2])
+            # Apply drone orientation (roll, pitch, yaw)
+            roll, pitch, yaw = np.degrees(sim.state[6:9])
+            glRotatef(yaw, 0, 0, 1)
+            glRotatef(pitch, 1, 0, 0)
+            glRotatef(roll, 0, 1, 0)
+            # Then apply blade rotation around local Z
             glRotatef(sim.blade_angles[i], 0, 0, 1)
             glColor3f(0.2, 0.2, 0.2)
             glLineWidth(4)
             glBegin(GL_LINES)
             glVertex3f(-0.18, 0, 0)
+            glVertex3f(0.18, 0, 0)
             glVertex3f(0.18, 0, 0)
             glVertex3f(0, -0.06, 0)
             glVertex3f(0, 0.06, 0)
@@ -255,53 +262,37 @@ class Renderer:
             cam_img = sim.get_camera_image(self.environment, fov=60, res=16)
             imgui.plot_lines("", cam_img[cam_img.shape[0]//2], graph_size=(300, 60))
             imgui.separator()
-        if imgui.button("Toggle LiDAR"):
-            self.show_lidar = not self.show_lidar
-        imgui.same_line()
-        imgui.text(f"LiDAR: {'ON' if self.show_lidar else 'OFF'}")
-        # Remove LiDAR scan and plot, bind vertex accumulation/rendering to LiDAR toggle
-        if self.show_lidar:
-            # Simulate LiDAR-like accumulation: only add a few points per frame in a circular scan
-            if not hasattr(self, 'lidar_angle'):
-                self.lidar_angle = 0.0
-            num_rays = 32  # number of rays per scan
-            scan_radius = 1.0  # scan radius in meters
+        # --- Accumulate camera chunks every 3 seconds with partial culling ---
+        if not hasattr(self, 'camera_chunks'):
+            self.camera_chunks = []  # List of (img, pos)
+            self.camera_chunk_counter = 0
+        self.camera_chunk_counter += 1
+        # Assuming ~30 FPS, 3 seconds = 90 frames
+        if self.camera_chunk_counter >= 90:
+            img = sim.get_camera_image(self.environment, fov=60, res=12)
             pos = sim.state[:3].copy()
-            pos[2] -= 0.2
-            angles = np.linspace(self.lidar_angle, self.lidar_angle + 2 * np.pi, num_rays, endpoint=False)
-            for angle in angles:
-                x = pos[0] + scan_radius * np.cos(angle)
-                y = pos[1] + scan_radius * np.sin(angle)
-                z = self.environment.contour_height(x, y)
-                key = (round(x, 2), round(y, 2))
-                if not hasattr(self, 'scanned_points_set'):
-                    self.scanned_points_set = set()
-                if key not in self.scanned_points_set:
-                    self.scanned_points_set.add(key)
-                    if not hasattr(self, 'scanned_points'):
-                        self.scanned_points = []
-                    self.scanned_points.append((x, y, z))
-            self.lidar_angle = (self.lidar_angle + np.pi / 32) % (2 * np.pi)
-            # Prepare VBO data if needed
-            arr = np.array(self.scanned_points, dtype=np.float32)
-            if arr.size > 0:
-                if self.vbo is not None:
-                    self.vbo.delete()
-                self.vbo = vbo.VBO(arr)
-                self.vbo_needs_update = False
-            # Render all accumulated scanned points as GL_POINTS using VBO
-            if self.vbo is not None:
-                glEnable(GL_BLEND)
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-                glPointSize(3)
-                self.vbo.bind()
-                glEnableClientState(GL_VERTEX_ARRAY)
-                glVertexPointer(3, GL_FLOAT, 0, self.vbo)
-                glColor4f(0.2, 0.8, 0.2, 0.5)
-                glDrawArrays(GL_POINTS, 0, len(self.scanned_points))
-                glDisableClientState(GL_VERTEX_ARRAY)
-                self.vbo.unbind()
-                glDisable(GL_BLEND)
+            self.add_camera_chunk_with_partial_culling(img, pos, fov=60)
+            self.camera_chunk_counter = 0
+        # Render all accumulated camera chunks as wireframe grids
+        for img, pos in self.camera_chunks:
+            res = img.shape[0]
+            fov = 60
+            half_fov = np.radians(fov / 2)
+            size = np.tan(half_fov) * (pos[2] - 0.2)
+            xs = np.linspace(pos[0] - size, pos[0] + size, res)
+            ys = np.linspace(pos[1] - size, pos[1] + size, res)
+            glColor3f(0.2, 0.8, 0.2)
+            glLineWidth(1.2)
+            for i in range(res):
+                glBegin(GL_LINE_STRIP)
+                for j in range(res):
+                    glVertex3f(xs[j], ys[i], img[i, j])
+                glEnd()
+            for j in range(res):
+                glBegin(GL_LINE_STRIP)
+                for i in range(res):
+                    glVertex3f(xs[j], ys[i], img[i, j])
+                glEnd()
         imgui.separator()
         self.draw_thrust_arrows(sim)
 
@@ -367,7 +358,62 @@ class Renderer:
             # You could integrate a text rendering library here
             glPopMatrix()
 
-    # ...existing code...
+    def is_chunk_overlapping(self, pos1, pos2, fov=60, altitude=None):
+        """Return True if two camera chunks overlap based on their positions and FOV coverage."""
+        if altitude is None:
+            altitude = pos1[2]
+        half_fov = np.radians(fov / 2)
+        size = np.tan(half_fov) * (altitude - 0.2)
+        # Use a square region for simplicity
+        dx = abs(pos1[0] - pos2[0])
+        dy = abs(pos1[1] - pos2[1])
+        return dx < 2 * size and dy < 2 * size
+
+    def mask_overlapping_area(self, img, pos, existing_chunks, fov=60):
+        """Mask out overlapping areas in img based on existing chunks."""
+        res = img.shape[0]
+        half_fov = np.radians(fov / 2)
+        size = np.tan(half_fov) * (pos[2] - 0.2)
+        xs = np.linspace(pos[0] - size, pos[0] + size, res)
+        ys = np.linspace(pos[1] - size, pos[1] + size, res)
+        mask = np.ones_like(img, dtype=bool)
+        for _, old_pos in existing_chunks:
+            old_size = np.tan(half_fov) * (old_pos[2] - 0.2)
+            x_min, x_max = old_pos[0] - old_size, old_pos[0] + old_size
+            y_min, y_max = old_pos[1] - old_size, old_pos[1] + old_size
+            # Mask out overlapping region
+            x_overlap = (xs >= x_min) & (xs <= x_max)
+            y_overlap = (ys >= y_min) & (ys <= y_max)
+            for i in range(res):
+                for j in range(res):
+                    if x_overlap[j] and y_overlap[i]:
+                        mask[i, j] = False
+        return np.where(mask, img, np.nan), mask
+
+    def add_camera_chunk_with_partial_culling(self, img, pos, fov=60):
+        """Add only the non-overlapping part of a camera chunk."""
+        if not hasattr(self, 'camera_chunks'):
+            self.camera_chunks = []
+        masked_img, mask = self.mask_overlapping_area(img, pos, self.camera_chunks, fov)
+        if np.any(mask):
+            self.camera_chunks.append((masked_img, pos))
+
+    def add_camera_chunk_with_culling(self, img, pos, fov=60):
+        """Add a camera chunk, replacing any overlapping chunk to save memory."""
+        new_chunks = []
+        replaced = False
+        for old_img, old_pos in self.camera_chunks:
+            if self.is_chunk_overlapping(pos, old_pos, fov, altitude=pos[2]):
+                # Replace the old chunk with the new one
+                if not replaced:
+                    new_chunks.append((img, pos))
+                    replaced = True
+                # else: skip adding the old chunk
+            else:
+                new_chunks.append((old_img, old_pos))
+        if not replaced:
+            new_chunks.append((img, pos))
+        self.camera_chunks = new_chunks
 
     def reshape(self, width, height):
         self.window_width, self.window_height = width, height
