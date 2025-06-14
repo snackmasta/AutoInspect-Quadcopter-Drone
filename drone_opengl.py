@@ -32,6 +32,7 @@ def main():
         last_time = current_time
         glfw.poll_events()
         impl.process_inputs()
+        renderer.handle_mouse(window)  # <-- Add this line for camera interaction
         width, height = glfw.get_framebuffer_size(window)
         renderer.reshape(width, height)
         imgui.new_frame()

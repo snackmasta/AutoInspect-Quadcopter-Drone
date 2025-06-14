@@ -18,7 +18,30 @@ class QuadcopterSimulation:
         self._init_waypoints()
 
     def _init_waypoints(self):
-        waypoints = [np.array([0, 0, 2]), np.array([2, 0, 2]), np.array([2, 2, 3]), np.array([0, 2, 2]), np.array([0, 0, 0])]
+        # More explorative trajectory: spiral up, zigzag, and return
+        waypoints = []
+        # Spiral up
+        for t in np.linspace(0, 2 * np.pi, 12):
+            r = 1.5
+            z = 1.0 + t / (2 * np.pi) * 2.0
+            x = r * np.cos(t)
+            y = r * np.sin(t)
+            waypoints.append(np.array([x, y, z]))
+        # Zigzag at top
+        for i in range(6):
+            x = (-1) ** i * 2.0
+            y = 1.5 - i * 0.6
+            z = 3.0
+            waypoints.append(np.array([x, y, z]))
+        # Descend in a wide arc
+        for t in np.linspace(0, np.pi, 8):
+            x = 2.0 * np.cos(t)
+            y = -2.0 + 2.0 * np.sin(t)
+            z = 3.0 - t / np.pi * 2.5
+            waypoints.append(np.array([x, y, z]))
+        # Return to start
+        waypoints.append(np.array([0, 0, 0]))
+        # Interpolate sub-waypoints
         all_waypoints = []
         for i in range(len(waypoints) - 1):
             for j in range(6):

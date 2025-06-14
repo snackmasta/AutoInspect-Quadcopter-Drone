@@ -9,6 +9,32 @@ class Renderer:
         self.window_width, self.window_height = 1200, 800
         self.angle_x, self.angle_y, self.angle_z = -73, 0, 17
         self.zoom = 1.2
+        # Camera interaction state
+        self._dragging = False
+        self._last_mouse = (0, 0)
+
+    def handle_mouse(self, window):
+        import glfw
+        # Mouse drag to orbit (now left-right controls angle_z, up-down controls angle_x)
+        if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
+            x, y = glfw.get_cursor_pos(window)
+            if not self._dragging:
+                self._dragging = True
+                self._last_mouse = (x, y)
+            else:
+                dx = x - self._last_mouse[0]
+                dy = y - self._last_mouse[1]
+                self.angle_z += dx * 0.3  # left-right controls yaw (z)
+                self.angle_x += dy * 0.3  # up-down controls pitch (x)
+                self.angle_x = max(-89, min(89, self.angle_x))
+                self._last_mouse = (x, y)
+        else:
+            self._dragging = False
+        # Mouse wheel to zoom
+        def scroll_callback(window, xoffset, yoffset):
+            self.zoom *= 0.95 ** yoffset
+            self.zoom = max(0.2, min(3.0, self.zoom))
+        glfw.set_scroll_callback(window, scroll_callback)
 
     def draw_ground_grid(self, size=3, step=0.5):
         glColor3f(0.7, 0.7, 0.7)
@@ -104,13 +130,17 @@ class Renderer:
             imgui.plot_lines("", altitudes, graph_size=(320, 60))
         imgui.pop_style_var(4)
         imgui.end()
+        # 3D Scene
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+        # Camera now orbits around the drone's current position
+        center = sim.state[:3]
+        glTranslatef(-center[0], -center[1], -center[2])
         glTranslatef(0, 0, -10 * self.zoom)
-        glRotatef(self.angle_x, 1, 0, 0)
-        glRotatef(self.angle_y, 0, 1, 0)
-        glRotatef(self.angle_z, 0, 0, 1)
+        glRotatef(self.angle_x, 1, 0, 0)  # pitch (x)
+        glRotatef(self.angle_z, 0, 0, 1)  # yaw (z)
+        # Removed yaw (angle_y)
         self.draw_ground_grid()
         glColor3f(1, 1, 0)
         glPointSize(8)
