@@ -28,6 +28,31 @@ class QuadcopterSimulation:
         self.manual_rpms = np.zeros(4)
         self._init_waypoints()
 
+    def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
+        # Insert a hover (repeat waypoint) after sharp turns, and mark them for stabilization
+        new_wps = []
+        self.hover_indices = set()
+        for i in range(len(waypoints)):
+            new_wps.append(waypoints[i])
+            if 0 < i < len(waypoints) - 1:
+                v1 = waypoints[i] - waypoints[i-1]
+                v2 = waypoints[i+1] - waypoints[i]
+                v1[2] = 0
+                v2[2] = 0
+                norm1 = np.linalg.norm(v1)
+                norm2 = np.linalg.norm(v2)
+                if norm1 > 1e-3 and norm2 > 1e-3:
+                    v1 /= norm1
+                    v2 /= norm2
+                    dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
+                    angle = np.arccos(dot) * 180 / np.pi
+                    if angle > angle_threshold_deg:
+                        # Insert hover after this waypoint and mark indices
+                        for _ in range(hover_steps):
+                            new_wps.append(waypoints[i].copy())
+                            self.hover_indices.add(len(new_wps)-1)
+        return new_wps
+
     def _init_waypoints(self):
         # Simple takeoff to (0,0,6) and hover, then move to a new point to test yaw/roll/pitch
         altitude = 6.0
@@ -42,7 +67,8 @@ class QuadcopterSimulation:
         # Return to center
         move3 = [np.array([x, y, altitude]) for x, y in zip(np.linspace(-5, 0, 30), np.linspace(5, 0, 30))]
         hover4 = [np.array([0, 0, altitude])] * 50
-        self.waypoints = takeoff + hover + move1 + hover2 + move2 + hover3 + move3 + hover4
+        wps = takeoff + hover + move1 + hover2 + move2 + hover3 + move3 + hover4
+        self.waypoints = self._insert_hover_after_sharp_turns(wps, hover_steps=60, angle_threshold_deg=30)
 
     def get_hover_rpm(self):
         """Calculate the RPM needed for each rotor to hover, based on physical parameters."""
@@ -147,54 +173,67 @@ class QuadcopterSimulation:
             self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
         
         # Update rotor_speeds based on actual individual thrusts
+        rpm_smoothing = 0.2  # Smoothing factor (0 = no smoothing, 1 = instant)
+        min_thrust = 1e-3    # Minimum thrust to avoid 0 RPM
         for i in range(4):
-            if hasattr(self, 'rotor_thrusts') and self.rotor_thrusts[i] > 0:
-                omega = np.sqrt(self.rotor_thrusts[i] / self.k_thrust)  # rad/s
-                rpm = omega * 60.0 / (2 * np.pi)
-                self.rotor_speeds[i] = np.clip(rpm, self.min_rpm, self.max_rpm)
-            else:
-                self.rotor_speeds[i] = 0
+            thrust = max(self.rotor_thrusts[i], min_thrust)
+            omega = np.sqrt(thrust / self.k_thrust)  # rad/s
+            rpm = omega * 60.0 / (2 * np.pi)
+            rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
+            # Smooth RPM update
+            self.rotor_speeds[i] = (1 - rpm_smoothing) * self.rotor_speeds[i] + rpm_smoothing * rpm
 
     def position_controller(self, target):
         # PID for position -> desired acceleration
         pos, vel = self.state[:3], self.state[3:6]
         roll, pitch, yaw = self.state[6:9]
         wx, wy, wz = self.state[9:12]
-          # Position control gains
         kp, kd = 3.0, 2.0
         acc_des = kp * (target - pos) - kd * vel
-        acc_des[2] += self.g        # Calculate desired yaw angle to face the target
+        acc_des[2] += self.g
         dx = target[0] - pos[0]
         dy = target[1] - pos[1]
         horizontal_distance = np.sqrt(dx**2 + dy**2)
-        
-        # Disable yaw control for now to prevent spinning
-        yaw_control = False
-        yaw_error = 0
-        
+
+        # --- Lookahead Yaw Logic with Stabilize-on-Hover ---
+        desired_yaw = None
+        if hasattr(self, 'hover_indices') and self.wp_index in self.hover_indices:
+            # During hover after sharp turn, hold current yaw
+            desired_yaw = yaw
+        else:
+            if hasattr(self, 'waypoints') and hasattr(self, 'wp_index'):
+                if self.wp_index < len(self.waypoints) - 1:
+                    next_wp = self.waypoints[self.wp_index + 1]
+                    lookahead_dx = next_wp[0] - target[0]
+                    lookahead_dy = next_wp[1] - target[1]
+                    if abs(lookahead_dx) > 1e-3 or abs(lookahead_dy) > 1e-3:
+                        desired_yaw = np.arctan2(lookahead_dy, lookahead_dx)
+        if desired_yaw is None:
+            desired_yaw = np.arctan2(dy, dx)
+
         # Transform desired acceleration from world to body frame using current yaw
-        # World: X-forward, Y-left, Z-up; Body: x-forward, y-left, z-up
         acc_des_xy = acc_des[:2]
         c_yaw = np.cos(yaw)
         s_yaw = np.sin(yaw)
-        # 2D rotation (world to body):
         acc_body_x =  c_yaw * acc_des[0] + s_yaw * acc_des[1]
         acc_body_y = -s_yaw * acc_des[0] + c_yaw * acc_des[1]
-        # Now compute pitch/roll from body-frame accelerations
-        pitch_des = acc_body_x / self.g  # Flipped sign
-        roll_des  = -acc_body_y / self.g  # Flipped sign
-        
-        # Limit desired angles to prevent excessive tilting
+        pitch_des = acc_body_x / self.g
+        roll_des  = -acc_body_y / self.g
         max_angle = np.pi / 6  # 30 degrees
         pitch_des = np.clip(pitch_des, -max_angle, max_angle)
-        roll_des = np.clip(roll_des, -max_angle, max_angle)        # Attitude control gains
+        roll_des = np.clip(roll_des, -max_angle, max_angle)
         kp_att, kd_att = 8.0, 2.0
-        # kd_yaw = 1.0  # Only damping for yaw
         tau_x = kp_att * (roll_des - roll) - kd_att * wx
         tau_y = kp_att * (pitch_des - pitch) - kd_att * wy
-        # Yaw control: face direction of travel (fix sign)
-        desired_yaw = np.arctan2(dy, dx)  # Face next waypoint
-        yaw_error = (desired_yaw - yaw + np.pi) % (2 * np.pi) - np.pi  # FIXED: correct sign
+        # Yaw control: always lead with the next segment
+        yaw_error = (desired_yaw - yaw + np.pi) % (2 * np.pi) - np.pi
+        heading_vec = np.array([np.cos(yaw), np.sin(yaw)])
+        target_vec = np.array([np.cos(desired_yaw), np.sin(desired_yaw)])
+        cross = heading_vec[0]*target_vec[1] - heading_vec[1]*target_vec[0]
+        if cross < 0 and yaw_error > 0:
+            yaw_error -= 2 * np.pi
+        elif cross > 0 and yaw_error < 0:
+            yaw_error += 2 * np.pi
         kp_yaw = 4.0
         kd_yaw = 1.0
         tau_z = kp_yaw * yaw_error - kd_yaw * wz
@@ -363,14 +402,26 @@ class QuadcopterSimulation:
         k_yaw = 1e-7  # drag torque coefficient
         d_roll = tau_x / (2 * L) if L > 0 else 0
         d_pitch = tau_y / (2 * L) if L > 0 else 0
-        d_yaw = -tau_z / (4 * k_yaw) if k_yaw > 0 else 0  # Flipped sign for correct yaw direction
-        # FIX: Remove negative signs for T2 and T4
+        d_yaw = -tau_z / (4 * k_yaw) if k_yaw > 0 else 0
         T1 = T_base + d_roll + d_pitch + d_yaw  # Front Left
         T2 = T_base + d_roll - d_pitch - d_yaw  # Front Right
         T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
         T4 = T_base - d_roll + d_pitch - d_yaw  # Rear Left
-        
         thrusts = np.array([T1, T2, T3, T4])
-        thrusts = np.clip(thrusts, 0, None)
-        
+        # --- Fine control: scale torques if any thrust < min_thrust ---
+        min_thrust = 1e-3
+        min_val = np.min(thrusts)
+        if min_val < min_thrust:
+            # Compute scaling factor for torques
+            # Only scale torques, not total thrust
+            scale = (T_base - min_thrust) / (T_base - min_val) if T_base != min_val else 0.0
+            d_roll *= scale
+            d_pitch *= scale
+            d_yaw *= scale
+            T1 = T_base + d_roll + d_pitch + d_yaw
+            T2 = T_base + d_roll - d_pitch - d_yaw
+            T3 = T_base - d_roll - d_pitch + d_yaw
+            T4 = T_base - d_roll + d_pitch - d_yaw
+            thrusts = np.array([T1, T2, T3, T4])
+        thrusts = np.clip(thrusts, min_thrust, None)
         return thrusts
