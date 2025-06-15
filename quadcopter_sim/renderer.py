@@ -319,6 +319,17 @@ class Renderer:
             thrust_coefficient=self.thrust_visual.thrust_coefficient,
             atmosphere_density=self.thrust_visual.atmosphere_density
         )
+        # Highlight lookahead target (for path following)
+        try:
+            from quadcopter_sim.main_trajectory import get_lookahead_target
+            lookahead_target = get_lookahead_target(sim.state[:3], sim.waypoints, lookahead_dist=2.0)
+            glColor3f(1, 0, 1)  # Magenta for lookahead
+            glPointSize(18)
+            glBegin(GL_POINTS)
+            glVertex3f(*lookahead_target)
+            glEnd()
+        except Exception as e:
+            pass  # If import fails, skip lookahead marker
 
     def is_chunk_overlapping(self, pos1, pos2, fov=60, altitude=None):
         """Return True if two camera chunks overlap based on their positions and FOV coverage."""
