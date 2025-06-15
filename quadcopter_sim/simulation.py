@@ -22,7 +22,7 @@ class QuadcopterSimulation:
         self.I = np.diag([Ixx, Iyy, Izz])  # inertia matrix (kg*m^2)
         self.invI = np.linalg.inv(self.I)
         self.atmosphere_density = 1.225  # kg/m^3, default sea level
-        self.dt = 0.01
+        self.dt = 0.002
         # --- State variables ---
         self.state = np.zeros(12)
         self.state[2] = 0  # start on ground
@@ -429,6 +429,8 @@ class QuadcopterSimulation:
             vx += v_force[0]
             vy += v_force[1]
             vz += v_force[2]
+            # Additional direct damping for vertical speed when on ground
+            vz *= 0.7  # Reduce vertical speed by 30% per step when touching ground
         # Define tau before using it
         tau = np.array([tau_x, tau_y, tau_z])
         # Apply torque to tau
