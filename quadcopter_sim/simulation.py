@@ -12,9 +12,14 @@ class QuadcopterSimulation:
     def __init__(self):
         # --- Physical parameters ---
         self.g = 9.81
-        self.m = 0.5  # mass (kg)
+        self.m = 3  # mass (kg)
         self.L = 0.6  # arm length (m)
-        self.I = np.diag([0.6, 0.6, 0.3])  # inertia matrix (kg*m^2)
+        # Use body box size for inertia calculation
+        w, d, h = 0.8, 0.8, 0.2  # meters
+        Ixx = (1/12) * self.m * (h**2 + d**2)
+        Iyy = (1/12) * self.m * (h**2 + w**2)
+        Izz = (1/12) * self.m * (w**2 + d**2)
+        self.I = np.diag([Ixx, Iyy, Izz])  # inertia matrix (kg*m^2)
         self.invI = np.linalg.inv(self.I)
         self.atmosphere_density = 1.225  # kg/m^3, default sea level
         self.dt = 0.01
