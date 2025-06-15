@@ -28,7 +28,13 @@ def position_controller(state, target, hover_indices=None, wp_index=None, waypoi
         desired_vel_xy = direction_xy * min(target_speed, distance)  # Don't overshoot
     else:
         desired_vel_xy = np.zeros(2)
-    desired_vel = np.array([desired_vel_xy[0], desired_vel_xy[1], 0.0])
+    # --- Vertical speed logic ---
+    dz = direction[2]
+    if abs(dz) > 1e-3:
+        desired_vel_z = np.clip(dz, -target_speed, target_speed)
+    else:
+        desired_vel_z = 0.0
+    desired_vel = np.array([desired_vel_xy[0], desired_vel_xy[1], desired_vel_z])
     vel_error = desired_vel - vel
     acc_des = kp * (target - pos) + kd * vel_error
     # Limit desired acceleration to avoid aggressive commands
