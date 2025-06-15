@@ -90,6 +90,11 @@ def key_callback(window, key, scancode, action, mods):
         if debug_config.DEBUG_KEY_F:
             print("[DEBUG] F pressed: throttle down")
         sim.manual_rpms -= delta
+    elif key == glfw.KEY_SPACE:
+        if debug_config.DEBUG_KEY_EVENT:
+            print("[DEBUG] SPACE pressed: set all rotors to 0 RPM")
+        sim.manual_rpms[:] = 0
+        sim.rotor_speeds[:] = 0
     # Clamp RPMs
     sim.manual_rpms = np.clip(sim.manual_rpms, sim.min_rpm, sim.max_rpm)
     if debug_config.DEBUG_MANUAL_RPMS:
