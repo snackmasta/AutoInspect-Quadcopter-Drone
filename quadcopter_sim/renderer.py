@@ -105,6 +105,11 @@ class Renderer:
         _, self.angle_z = imgui.slider_float("Angle Z", self.angle_z, -180.0, 180.0)
         _, self.zoom = imgui.slider_float("Zoom", self.zoom, 0.2, 3.0)
         imgui.separator()
+        # Target speed slider
+        changed, new_speed = imgui.slider_float("Target Speed (m/s)", self.sim.target_speed, 0.5, 10.0)
+        if changed:
+            self.sim.set_target_speed(new_speed)
+        imgui.separator()
         # Manual control toggle and sliders
         changed, new_manual_mode = imgui.checkbox("Manual Mode", self.sim.manual_mode)
         if changed:

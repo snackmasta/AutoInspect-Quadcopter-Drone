@@ -55,6 +55,10 @@ class QuadcopterSimulation:
         self._init_waypoints()
         self.thrust_model = Thrust(self.k_thrust, self.atmosphere_density)
         self.use_pid = True  # Toggle for PID (True) or LQR (False) in Auto mode
+        self.target_speed = 3.0  # Default, can be changed via GUI
+
+    def set_target_speed(self, value):
+        self.target_speed = value
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
         # Insert a hover (repeat waypoint) after sharp turns, and mark them for stabilization
@@ -388,7 +392,8 @@ class QuadcopterSimulation:
             waypoints=getattr(self, 'waypoints', None),
             yaw_control_enabled=getattr(self, 'yaw_control_enabled', True),
             g=self.g,
-            m=self.m
+            m=self.m,
+            target_speed=self.target_speed
         )
 
     def physics_update(self, u, dt):
