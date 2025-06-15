@@ -275,10 +275,10 @@ class QuadcopterSimulation:
                 rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
                 self.rotor_speeds[i] = rpm
             # --- Check if all feet are on or below ground ---
-            feet = self.feet_positions()
-            all_feet_on_ground = np.all(feet[:,2] <= 0.01)
+            # feet = self.feet_positions()
+            # all_feet_on_ground = np.all(feet[:,2] <= 0.01)
             # If at the end of landing trajectory and all feet are on ground, stay at last point and exit landing mode
-            if self.landing_index >= len(self.landing_traj) - 1 and all_feet_on_ground:
+            if self.landing_index >= len(self.landing_traj) - 1: # and all_feet_on_ground:
                 self.landing_index = len(self.landing_traj) - 1
                 self.is_landing = False
                 del self.landing_traj
@@ -409,63 +409,18 @@ class QuadcopterSimulation:
         x += vx * dt
         y += vy * dt
         z += vz * dt  # update z position with new vertical velocity
-        # --- Ground/feet collision correction (after position update) ---
-        feet = self.feet_positions()
-        feet_zs = feet[:, 2]
-        feet_grounds = np.array([
-            self.environment.contour_height(f[0], f[1]) for f in feet
-        ])
-        min_foot_clearance = np.min(feet_zs - feet_grounds)
-        if min_foot_clearance < 0 and vz < 0:
-            z += -min_foot_clearance  # lift drone so lowest foot is on terrain
-            vz = 0  # stop downward velocity
-        # Apply friction if any foot is on the ground
-        if np.any(feet_zs - feet_grounds <= 0.01):
-            mu = 2.0  # friction coefficient (tune as needed)
-            # Estimate normal force as weight (or sum of ground reaction if available)
-            N = self.m * self.g  # Approximate normal force
-            v_xy = np.array([vx, vy])
-            speed_xy = np.linalg.norm(v_xy)
-            if speed_xy > 1e-4:
-                # Kinetic friction, direction opposes velocity
-                friction_force = -mu * N * v_xy / speed_xy
-                # Clamp friction so it doesn't reverse velocity in one step
-                max_friction = self.m * speed_xy / dt
-                friction_force = np.clip(friction_force, -max_friction, max_friction)
-                a[0] += friction_force[0] / self.m
-                a[1] += friction_force[1] / self.m
-            else:
-                # Static friction: zero out very small velocities
-                vx = 0.0
-                vy = 0.0
-            # --- NEW: Apply angular friction when on ground ---
-            k_ground_angular_friction = 2.0  # Nm*s, tune as needed
-            tau_x += -k_ground_angular_friction * wx
-            tau_y += -k_ground_angular_friction * wy
-            tau_z += -k_ground_angular_friction * wz
-        # --- NEW: Apply ground reaction force and torque for each foot in contact ---
-        ground_reaction_tau = np.zeros(3)
-        for i, (fz, fg, foot_pos) in enumerate(zip(feet_zs, feet_grounds, feet)):
-            penetration = fg - fz
-            if penetration > 0:
-                # Upward force proportional to penetration depth (spring model)
-                k_ground = 2000.0  # N/m, tune as needed
-                F_up = k_ground * penetration
-                # Apply at foot position, direction +z (world)
-                r = foot_pos[:3] - np.array([x, y, z])  # vector from CoM to foot
-                tau_foot = np.cross(r, np.array([0, 0, F_up]))
-                ground_reaction_tau += tau_foot
-                # Optionally, add vertical force to a[2] (if not already handled by z correction)
-                a[2] += F_up / self.m / 4  # distribute among feet
-        # Add ground reaction torque to tau_x, tau_y, tau_z
-        tau_x += ground_reaction_tau[0]
-        tau_y += ground_reaction_tau[1]
-        tau_z += ground_reaction_tau[2]
-        tau = np.array([tau_x, tau_y, tau_z])
+        # --- Ground collision correction (after position update) ---
+        # Remove all foot/feet logic
+        # Add simple ground collision response
+        ground_height = self.environment.contour_height(x, y)
+        if z < ground_height:
+            z = ground_height  # Snap to ground
+            vz = 0  # Stop any downward velocity
         # --- Air drag torque ---
         omega_body = np.array([wx, wy, wz])  # Use body angular velocity for drag
         k_drag = 0.3  # drag coefficient (increased for faster angular damping)
         tau_drag = -k_drag * omega_body
+        tau = np.array([tau_x, tau_y, tau_z])  # Ensure tau is defined
         tau += tau_drag
         omega_dot = self.invI @ (tau - np.cross(omega_body, self.I @ omega_body))
         wx += omega_dot[0] * dt
@@ -539,35 +494,6 @@ class QuadcopterSimulation:
         world_offsets = offsets @ R.T
         return np.array([ [x, y, z] + world_offsets[i] for i in range(4)])
 
-    def feet_positions(self):
-        # Define 4 feet, each offset from the center (body frame)
-        # Place feet slightly inward from rotors, and below the body
-        x, y, z, _, _, _, roll, pitch, yaw, _, _, _ = self.state
-        # Feet offsets in body frame (x, y, z)
-        foot_z = -0.25  # feet extend below drone body
-        foot_offset = self.L * 0.35  # closer to center than rotors
-        offsets = np.array([
-            [-foot_offset, foot_offset, foot_z],
-            [foot_offset, foot_offset, foot_z],
-            [foot_offset, -foot_offset, foot_z],
-            [-foot_offset, -foot_offset, foot_z]
-        ])
-        # Rotation matrix from body to world
-        cr, sr = np.cos(roll), np.sin(roll)
-        cp, sp = np.cos(pitch), np.sin(pitch)
-        cy, sy = np.cos(yaw), np.sin(yaw)
-        R = np.array([
-            [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
-            [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
-            [-sp, cp*sr, cp*cr]
-        ])
-        world_offsets = offsets @ R.T
-        return np.array([[x, y, z] + world_offsets[i] for i in range(4)])
-
-    def feet_hitboxes(self, radius=0.06):
-        # Returns a list of (center, radius) for each foot
-        return [(pos, radius) for pos in self.feet_positions()]
-
     def get_camera_image(self, environment, fov=60, res=32, offset=0.2):
         """
         Simulate a downward-facing camera at the bottom of the drone.
@@ -619,3 +545,4 @@ class QuadcopterSimulation:
     def _debug_print(self, msg):
         if debug_config.DEBUG_PHYSICS:
             print(msg)
+

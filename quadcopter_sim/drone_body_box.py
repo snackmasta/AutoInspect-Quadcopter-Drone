@@ -41,3 +41,38 @@ def draw_drone_body_box(roll, pitch, yaw, center, size=(0.8, 0.8, 0.2)):
     glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1)
     glEnd()
     glPopMatrix()
+
+def get_body_box_corners(roll, pitch, yaw, center, size=(0.8, 0.8, 0.2)):
+    """
+    Returns the 8 world coordinates of the drone's main body box corners.
+    The box matches the one drawn in draw_drone_body_box.
+    Args:
+        roll, pitch, yaw: orientation in radians
+        center: (x, y, z) position of the box center
+        size: (width, depth, height)
+    Returns:
+        corners: (8, 3) array of world coordinates
+    """
+    w, d, h = size
+    # Box corners in local body frame
+    corners = np.array([
+        [-w/2, -d/2, -h/2],
+        [ w/2, -d/2, -h/2],
+        [ w/2,  d/2, -h/2],
+        [-w/2,  d/2, -h/2],
+        [-w/2, -d/2,  h/2],
+        [ w/2, -d/2,  h/2],
+        [ w/2,  d/2,  h/2],
+        [-w/2,  d/2,  h/2],
+    ])
+    # Rotation matrix (same as in draw_drone_body_box, but using radians)
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    R = np.array([
+        [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
+        [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
+        [-sp, cp*sr, cp*cr]
+    ])
+    world_corners = (R @ corners.T).T + np.array(center)
+    return world_corners

@@ -237,27 +237,6 @@ class Renderer:
         glBegin(GL_POINTS)
         glVertex3f(*sim.waypoints[sim.wp_index])
         glEnd()
-        # Draw drone feet
-        feet = sim.feet_positions()
-        glColor3f(0.4, 0.2, 0.1)  # brown feet
-        glPointSize(10)
-        glBegin(GL_POINTS)
-        for f in feet:
-            glVertex3f(*f)
-        glEnd()
-        # Draw hitboxes (as circles in XY plane)
-        for f in feet:
-            glPushMatrix()
-            glTranslatef(f[0], f[1], f[2])
-            glColor3f(1, 0, 1)
-            glBegin(GL_LINE_LOOP)
-            for i in range(20):
-                theta = 2 * np.pi * i / 20
-                x = 0.06 * np.cos(theta)
-                y = 0.06 * np.sin(theta)
-                glVertex3f(x, y, 0)
-            glEnd()
-            glPopMatrix()
         # Draw drone sensors (camera FOV and LiDAR rays)
         sim = self.sim
         # Camera FOV visualization
