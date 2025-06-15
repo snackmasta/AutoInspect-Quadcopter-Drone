@@ -88,7 +88,7 @@ def body_box_terrain_penetration(roll, pitch, yaw, center, environment, size=(0.
     max_penetration = np.max(penetrations)
     return max_penetration
 
-def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy, wx, wy, wz, size=(0.8, 0.8, 0.2), penetration_tol=0.01, velocity_deadzone=0.05):
+def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy, wx, wy, wz, size=(0.8, 0.8, 0.2), penetration_tol=0.01, velocity_deadzone=0.5):
     """
     Compute normal force and torque from terrain collision for the body box.
     Returns (force, torque) in world frame.
@@ -99,18 +99,22 @@ def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy,
     penetrations = ground_heights - corners[:, 2]
     force = np.zeros(3)
     torque = np.zeros(3)
-    k_ground = 100  # N/m, spring constant
+    k_ground = 1500  # N/m, spring constant
     k_friction = 10.0   # friction coefficient
-    d_ground = 10.0    # Damping coefficient for normal direction
+    d_ground = 1700.0    # Damping coefficient for normal direction
+    spring_scale = 0.5  # Scale down the spring force output
     for i, penetration in enumerate(penetrations):
         if penetration > penetration_tol:
             r = corners[i] - np.array(center)
             v_contact = np.array([vx, vy, 0]) + np.cross([wx, wy, wz], r)
             v_n = v_contact[2]
-            # Deadzone for vertical velocity
+            # Improved deadzone for vertical velocity
             if abs(v_n) < velocity_deadzone:
                 v_n = 0.0
-            f_n = np.array([0, 0, k_ground * (penetration - penetration_tol) - d_ground * v_n])
+            # If penetration is significant and v_n is very small, clamp to zero to avoid jitter
+            if abs(v_n) < velocity_deadzone and penetration > 2 * penetration_tol:
+                v_n = 0.0
+            f_n = np.array([0, 0, spring_scale * (k_ground * (penetration - penetration_tol) - d_ground * v_n)])
             # Friction force (opposes velocity at contact point)
             v_xy = v_contact[:2]
             if np.linalg.norm(v_xy) < velocity_deadzone:
