@@ -1,23 +1,18 @@
 import numpy as np
 from OpenGL.GL import *
 
-def draw_drone_body_box(pitch, roll, yaw, center, size=(0.4, 0.4, 0.1)):
+def draw_drone_body_box(roll, pitch, yaw, center, size=(0.8, 0.8, 0.2)):
     """
-    Draws a blue wireframe box representing the drone body, oriented by roll, pitch, yaw (in degrees), centered at center (x, y, z).
+    Draws a blue wireframe box representing the drone body, oriented by roll (deg, X), pitch (deg, Y), yaw (deg, Z), centered at center (x, y, z).
     size: (width, depth, height)
     """
     w, d, h = size
     glPushMatrix()
     glTranslatef(center[0], center[1], center[2])
-    # Try swapping pitch and roll: yaw (Z), roll (Y), pitch (X)
-    glRotatef(yaw, 0, 0, 1)
-    glRotatef(pitch, 1, 0, 0)  # pitch (X)
-    glRotatef(roll, 0, 1, 0)   # roll (Y)
-    # Swap to:
-    # glRotatef(-yaw, 0, 0, 1)
-    # glRotatef(-roll, 1, 0, 0)
-    # glRotatef(-pitch, 0, 1, 0)
-    # But let's try the above first
+    # Apply yaw (Z), then pitch (Y), then roll (X)
+    glRotatef(yaw, 0, 0, 1)    # Yaw (Z)
+    glRotatef(pitch, 0, 1, 0)  # Pitch (Y)
+    glRotatef(roll, 1, 0, 0)   # Roll (X)
     glColor3f(0, 0, 1)  # Blue
     glLineWidth(2)
     # Vertices of the box
