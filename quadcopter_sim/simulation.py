@@ -5,6 +5,7 @@ from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
 from .thrust import Thrust
 from .drone_body_box import get_body_box_corners, body_box_terrain_penetration, body_box_terrain_forces
+from .position_controller import position_controller  # <-- Add this import
 import debug_config
 
 class QuadcopterSimulation:
@@ -53,6 +54,7 @@ class QuadcopterSimulation:
         # --- Waypoints ---
         self._init_waypoints()
         self.thrust_model = Thrust(self.k_thrust, self.atmosphere_density)
+        self.use_pid = True  # Toggle for PID (True) or LQR (False) in Auto mode
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
         # Insert a hover (repeat waypoint) after sharp turns, and mark them for stabilization
@@ -306,9 +308,12 @@ class QuadcopterSimulation:
                 desired_vel = desired_vel * (max_speed / speed)
         else:
             desired_vel = np.zeros(3)
-        # Build 6D target for LQR: [x, y, z, vx, vy, vz]
-        lqr_target = np.hstack((target_pos, desired_vel))
-        u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m)
+        # Toggle between PID and LQR for Auto mode
+        if self.use_pid:
+            u = self.position_controller(target_pos)
+        else:
+            lqr_target = np.hstack((target_pos, desired_vel))
+            u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m)
         
         # Calculate individual rotor thrusts for debug
         rotor_thrusts = self.calculate_rotor_thrusts(u)
