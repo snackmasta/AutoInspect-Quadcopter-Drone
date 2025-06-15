@@ -395,17 +395,23 @@ class QuadcopterSimulation:
         thrust_world = R @ thrust_body
         # Linear acceleration
         a = thrust_world / self.m - np.array([0, 0, self.g])
-        # --- Ground/feet collision ---
+        # Update velocities and positions
+        vx += a[0] * dt
+        vy += a[1] * dt
+        vz += a[2] * dt
+        x += vx * dt
+        y += vy * dt
+        z += vz * dt  # update z position with new vertical velocity
+        # --- Ground/feet collision correction (after position update) ---
         feet = self.feet_positions()
         feet_zs = feet[:, 2]
         feet_grounds = np.array([
             self.environment.contour_height(f[0], f[1]) for f in feet
         ])
         min_foot_clearance = np.min(feet_zs - feet_grounds)
-        # Prevent any foot from going below terrain
-        if min_foot_clearance < 0:
+        if min_foot_clearance < 0 and vz < 0:
             z += -min_foot_clearance  # lift drone so lowest foot is on terrain
-            vz = max(vz, 0)  # only stop downward velocity, allow upward movement
+            vz = 0  # stop downward velocity
         # Apply friction if any foot is on the ground
         if np.any(feet_zs - feet_grounds <= 0.01):
             mu = 2.0  # friction coefficient (tune as needed)
@@ -413,20 +419,31 @@ class QuadcopterSimulation:
             friction_ay = -mu * vy
             a[0] += friction_ax
             a[1] += friction_ay
-        vx += a[0] * dt
-        vy += a[1] * dt
-        vz += a[2] * dt
-        x += vx * dt
-        y += vy * dt
-        z += vz * dt  # update z position with new vertical velocity
-        # Angular acceleration (Euler's equation)
-        omega = np.array([wx, wy, wz])
+        # --- NEW: Apply ground reaction force and torque for each foot in contact ---
+        ground_reaction_tau = np.zeros(3)
+        for i, (fz, fg, foot_pos) in enumerate(zip(feet_zs, feet_grounds, feet)):
+            penetration = fg - fz
+            if penetration > 0:
+                # Upward force proportional to penetration depth (spring model)
+                k_ground = 2000.0  # N/m, tune as needed
+                F_up = k_ground * penetration
+                # Apply at foot position, direction +z (world)
+                r = foot_pos[:3] - np.array([x, y, z])  # vector from CoM to foot
+                tau_foot = np.cross(r, np.array([0, 0, F_up]))
+                ground_reaction_tau += tau_foot
+                # Optionally, add vertical force to a[2] (if not already handled by z correction)
+                a[2] += F_up / self.m / 4  # distribute among feet
+        # Add ground reaction torque to tau_x, tau_y, tau_z
+        tau_x += ground_reaction_tau[0]
+        tau_y += ground_reaction_tau[1]
+        tau_z += ground_reaction_tau[2]
         tau = np.array([tau_x, tau_y, tau_z])
         # --- Air drag torque ---
+        omega_body = np.array([wx, wy, wz])  # Use body angular velocity for drag
         k_drag = 0.15  # drag coefficient (tune as needed)
-        tau_drag = -k_drag * omega
+        tau_drag = -k_drag * omega_body
         tau += tau_drag
-        omega_dot = self.invI @ (tau - np.cross(omega, self.I @ omega))
+        omega_dot = self.invI @ (tau - np.cross(omega_body, self.I @ omega_body))
         wx += omega_dot[0] * dt
         wy += omega_dot[1] * dt
         wz += omega_dot[2] * dt
@@ -447,7 +464,7 @@ class QuadcopterSimulation:
             [0, sr / cp, cr / cp]
         ])
         
-        euler_rates = T @ omega
+        euler_rates = T @ omega_body
         roll += euler_rates[0] * dt
         pitch += euler_rates[1] * dt
         yaw += euler_rates[2] * dt
