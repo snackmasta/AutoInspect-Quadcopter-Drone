@@ -182,7 +182,9 @@ class QuadcopterSimulation:
                 self.state[8] = self.manual_yaw
             # For visualization, update blade angles
             for i in range(4):
-                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360
+                # Flip the spinning direction for rotor 1 and 4 (index 0 and 3)
+                direction = -1 if i in [0, 3] else 1
+                self.blade_angles[i] = (self.blade_angles[i] + direction * 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360
             # Use thrust module for thrust calculation
             thrusts = self.thrust_model.compute_thrusts(self.rotor_speeds)
             total_thrust = np.sum(thrusts)
