@@ -44,18 +44,18 @@ def key_callback(window, key, scancode, action, mods):
     delta = 100  # RPM step
     if key == glfw.KEY_W:
         if debug_config.DEBUG_KEY_W:
-            print("[DEBUG] W pressed: pitch forward")
-        sim.manual_rpms[0] += delta
-        sim.manual_rpms[1] += delta
-        sim.manual_rpms[2] -= delta
-        sim.manual_rpms[3] -= delta
-    elif key == glfw.KEY_S:
-        if debug_config.DEBUG_KEY_S:
-            print("[DEBUG] S pressed: pitch backward")
+            print("[DEBUG] W pressed: pitch Forward")
         sim.manual_rpms[0] -= delta
         sim.manual_rpms[1] -= delta
         sim.manual_rpms[2] += delta
         sim.manual_rpms[3] += delta
+    elif key == glfw.KEY_S:
+        if debug_config.DEBUG_KEY_S:
+            print("[DEBUG] S pressed: pitch Backward")
+        sim.manual_rpms[0] += delta
+        sim.manual_rpms[1] += delta
+        sim.manual_rpms[2] -= delta
+        sim.manual_rpms[3] -= delta
     elif key == glfw.KEY_A:
         if debug_config.DEBUG_KEY_A:
             print("[DEBUG] A pressed: roll left")
