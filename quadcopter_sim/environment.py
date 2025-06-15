@@ -11,6 +11,9 @@ class Environment:
         self.scale = 0.02  # Controls terrain feature size
 
     def contour_height(self, x, y):
+        # Prevent NaN/inf input to PerlinNoise
+        if not (np.isfinite(x) and np.isfinite(y)):
+            return 0.0
         # Procedural terrain using PerlinNoise (pure Python)
         n = self.noise([x * self.scale, y * self.scale])
         return n * 4.0  # scale to get a nice range

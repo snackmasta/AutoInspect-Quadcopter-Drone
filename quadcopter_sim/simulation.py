@@ -431,6 +431,20 @@ class QuadcopterSimulation:
             vz += v_force[2]
             # Additional direct damping for vertical speed when on ground
             vz *= 0.7  # Reduce vertical speed by 30% per step when touching ground
+            # Additional direct damping for angular velocity when on ground
+            wx *= 0.5
+            wy *= 0.5
+            wz *= 0.5
+        # Clamp velocities to prevent overflow after ground collision
+        max_vel = 50.0  # reasonable max velocity in m/s
+        vx = np.clip(vx, -max_vel, max_vel)
+        vy = np.clip(vy, -max_vel, max_vel)
+        vz = np.clip(vz, -max_vel, max_vel)
+        # Clamp angular velocities to prevent overflow after ground collision
+        max_omega = 100.0  # reasonable max angular velocity in rad/s
+        wx = np.clip(wx, -max_omega, max_omega)
+        wy = np.clip(wy, -max_omega, max_omega)
+        wz = np.clip(wz, -max_omega, max_omega)
         # Define tau before using it
         tau = np.array([tau_x, tau_y, tau_z])
         # Apply torque to tau

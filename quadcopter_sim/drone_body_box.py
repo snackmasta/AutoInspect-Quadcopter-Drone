@@ -95,13 +95,18 @@ def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy,
     Includes damping, penetration tolerance, and velocity deadzone to prevent jitter.
     """
     corners = get_body_box_corners(roll, pitch, yaw, center, size)
-    ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in corners])
-    penetrations = ground_heights - corners[:, 2]
+    # Filter out corners with NaN or inf values
+    valid_corners = [c for c in corners if np.all(np.isfinite(c))]
+    if len(valid_corners) < len(corners):
+        # If any corner is invalid, skip terrain force (return zero force/torque)
+        return np.zeros(3), np.zeros(3)
+    ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in valid_corners])
+    penetrations = ground_heights - np.array([c[2] for c in valid_corners])
     force = np.zeros(3)
     torque = np.zeros(3)
-    k_ground = 1500  # N/m, spring constant
+    k_ground = 150  # N/m, spring constant
     k_friction = 10.0   # friction coefficient
-    d_ground = 1700.0    # Damping coefficient for normal direction
+    d_ground = 10.0    # Damping coefficient for normal direction
     spring_scale = 0.5  # Scale down the spring force output
     for i, penetration in enumerate(penetrations):
         if penetration > penetration_tol:
