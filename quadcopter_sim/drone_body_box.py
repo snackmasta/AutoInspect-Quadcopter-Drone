@@ -10,7 +10,7 @@ def draw_drone_body_box(pitch, roll, yaw, center, size=(0.4, 0.4, 0.1)):
     glPushMatrix()
     glTranslatef(center[0], center[1], center[2])
     # Try swapping pitch and roll: yaw (Z), roll (Y), pitch (X)
-    glRotatef(-yaw, 0, 0, 1)
+    glRotatef(yaw, 0, 0, 1)
     glRotatef(pitch, 1, 0, 0)  # pitch (X)
     glRotatef(roll, 0, 1, 0)   # roll (Y)
     # Swap to:

@@ -168,6 +168,10 @@ class QuadcopterSimulation:
                 self._hover_rpm_printed = True
             # In manual mode, set rotor speeds directly
             self.rotor_speeds[:] = np.clip(self.manual_rpms, self.min_rpm, self.max_rpm)
+            # --- Yaw direct control ---
+            if hasattr(self, 'manual_yaw'):
+                # Set the yaw state directly to manual_yaw
+                self.state[8] = self.manual_yaw
             # For visualization, update blade angles
             for i in range(4):
                 self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360

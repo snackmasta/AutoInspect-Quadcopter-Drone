@@ -73,17 +73,15 @@ def key_callback(window, key, scancode, action, mods):
     elif key == glfw.KEY_Q:
         if debug_config.DEBUG_KEY_Q:
             print("[DEBUG] Q pressed: yaw left")
-        sim.manual_rpms[0] += delta
-        sim.manual_rpms[2] += delta
-        sim.manual_rpms[1] -= delta
-        sim.manual_rpms[3] -= delta
+        if not hasattr(sim, 'manual_yaw'):
+            sim.manual_yaw = 0.0
+        sim.manual_yaw += np.radians(2)  # increment yaw by 2 degrees
     elif key == glfw.KEY_E:
         if debug_config.DEBUG_KEY_E:
             print("[DEBUG] E pressed: yaw right")
-        sim.manual_rpms[0] -= delta
-        sim.manual_rpms[2] -= delta
-        sim.manual_rpms[1] += delta
-        sim.manual_rpms[3] += delta
+        if not hasattr(sim, 'manual_yaw'):
+            sim.manual_yaw = 0.0
+        sim.manual_yaw -= np.radians(2)  # decrement yaw by 2 degrees
     elif key == glfw.KEY_R:
         if debug_config.DEBUG_KEY_R:
             print("[DEBUG] R pressed: throttle up")
@@ -96,6 +94,9 @@ def key_callback(window, key, scancode, action, mods):
     sim.manual_rpms = np.clip(sim.manual_rpms, sim.min_rpm, sim.max_rpm)
     if debug_config.DEBUG_MANUAL_RPMS:
         print(f"[DEBUG] manual_rpms: {sim.manual_rpms}")
+    if hasattr(sim, 'manual_yaw'):
+        if debug_config.DEBUG_MANUAL_RPMS:
+            print(f"[DEBUG] manual_yaw: {np.degrees(sim.manual_yaw):.2f} deg")
 
 def mouse_button_callback(window, button, action, mods):
     print(f"[DEBUG] mouse_button_callback: button={button}, action={action}")
