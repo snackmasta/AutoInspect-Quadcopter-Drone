@@ -238,65 +238,35 @@ class QuadcopterSimulation:
             self.trajectory.append(self.state[:3].copy())
             return
 
-        # --- LANDING MODE ---
-        if hasattr(self, 'is_landing') and self.is_landing and hasattr(self, 'landing_traj') and self.landing_traj:
-            # Follow landing trajectory
-            if not hasattr(self, 'landing_index'):
-                self.landing_index = 0
-            if self.landing_index < len(self.landing_traj) - 1 and np.linalg.norm(self.state[:3] - self.landing_traj[self.landing_index]) < 0.7:
-                self.landing_index += 1
-            target = self.landing_traj[self.landing_index]
-            # --- Ensure stable attitude for feet landing ---
-            # During last 10 steps, force roll/pitch to zero for stable landing
-            if self.landing_index >= len(self.landing_traj) - 10:
-                target_attitude = [0.0, 0.0]  # roll, pitch
-                self.state[6] = 0.98 * self.state[6]  # damp roll
-                self.state[7] = 0.98 * self.state[7]  # damp pitch
-            # Use position controller for landing
+        # --- TAKEOFF MODE ---
+        if hasattr(self, 'is_taking_off') and self.is_taking_off:
+            target = self.takeoff_target
             u = self.position_controller(target)
-            # Calculate individual rotor thrusts for debug
             rotor_thrusts = self.calculate_rotor_thrusts(u)
-            self.rotor_thrusts = rotor_thrusts  # Store for debug access
-            # Debug output every 50 steps (reduce spam)
-            if hasattr(self, 'debug_counter'):
-                self.debug_counter += 1
-            else:
-                self.debug_counter = 0
-            if self.debug_counter % 50 == 0:
-                print(f"LANDING MODE")
-                print(f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}]")
-                print(f"Target: [{target[0]:.1f}, {target[1]:.1f}, {target[2]:.1f}]")
-                print(f"Control: Roll={u[0]:.2f}, Pitch={u[1]:.2f}, Thrust={u[2]:.1f}, Yaw={u[5]:.2f}")
-                print(f"Rotor Thrusts: T1={rotor_thrusts[0]:.1f}, T2={rotor_thrusts[1]:.1f}, "
-                      f"T3={rotor_thrusts[2]:.1f}, T4={rotor_thrusts[3]:.1f}")
-                print(f"Angles: Roll={np.degrees(self.state[6]):.1f}°, Pitch={np.degrees(self.state[7]):.1f}°, "
-                      f"Yaw={np.degrees(self.state[8]):.1f}°")
-                print("---")
+            self.rotor_thrusts = rotor_thrusts
+            self.physics_update(u, delta_time)
+            self.trajectory.append(self.state[:3].copy())
+            # Animate blade angles
+            for i in range(4):
+                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
+            # If reached target altitude, exit takeoff mode
+            if abs(self.state[2] - target[2]) < 0.15:
+                self.is_taking_off = False
+            return
+        # --- LANDING MODE ---
+        if hasattr(self, 'is_landing') and self.is_landing:
+            target = self.landing_target
+            u = self.position_controller(target)
+            rotor_thrusts = self.calculate_rotor_thrusts(u)
+            self.rotor_thrusts = rotor_thrusts
             self.physics_update(u, delta_time)
             self.trajectory.append(self.state[:3].copy())
             for i in range(4):
                 self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
-            # Update rotor_speeds based on actual individual thrusts
-            rpm_smoothing = 1.0
-            min_thrust = 1e-3
-            max_omega = 2 * np.pi * self.max_rpm / 60.0
-            max_thrust = self.k_thrust * self.atmosphere_density * (max_omega ** 2)
-            for i in range(4):
-                thrust = max(self.rotor_thrusts[i], min_thrust)
-                thrust = min(thrust, max_thrust)
-                omega = np.sqrt(thrust / (self.k_thrust * self.atmosphere_density))
-                rpm = omega * 60.0 / (2 * np.pi)
-                rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
-                self.rotor_speeds[i] = rpm
-            # --- Check if all feet are on or below ground ---
-            # feet = self.feet_positions()
-            # all_feet_on_ground = np.all(feet[:,2] <= 0.01)
-            # If at the end of landing trajectory and all feet are on ground, stay at last point and exit landing mode
-            if self.landing_index >= len(self.landing_traj) - 1: # and all_feet_on_ground:
-                self.landing_index = len(self.landing_traj) - 1
+            # If on ground and spindown requested, set RPMs to 0 and exit landing mode
+            if self.landing_spindown and self.state[2] < 0.05 and abs(self.state[5]) < 0.2:
+                self.rotor_speeds[:] = 0
                 self.is_landing = False
-                del self.landing_traj
-                del self.landing_index
             return
 
         # Simple LQR to follow waypoints (replace PID)
@@ -578,13 +548,17 @@ class QuadcopterSimulation:
         return thrusts
 
     def takeoff(self, target_altitude=3.0):
-        self.waypoints, self.wp_index = takeoff_fn(self.state, self.waypoints, self.wp_index, target_altitude)
+        # Use new takeoff logic: set a direct target and enter takeoff mode
+        self.takeoff_target = takeoff_fn(self.state, target_altitude)
+        self.is_taking_off = True
+        self.is_landing = False
+        self.landing_spindown = False
 
     def land(self):
-        # Store landing trajectory separately, do not overwrite main waypoints
-        self.landing_traj = land_fn(self.state)
-        # Optionally, set a flag to indicate landing mode
+        # Use new land logic: set a direct target and enter landing mode
+        self.landing_target, self.landing_spindown = land_fn(self.state)
         self.is_landing = True
+        self.is_taking_off = False
 
     def _debug_print(self, msg):
         if debug_config.DEBUG_PHYSICS:
