@@ -349,11 +349,17 @@ class Renderer:
             thrust_coefficient=self.thrust_visual.thrust_coefficient,
             atmosphere_density=self.thrust_visual.atmosphere_density
         )
-        # Highlight lookahead target (for path following)
+        # Highlight lookahead target (for path following or landing)
         try:
-            from quadcopter_sim.main_trajectory import get_lookahead_target
-            lookahead_target = get_lookahead_target(sim.state[:3], sim.waypoints, lookahead_dist=2.0)
-            glColor3f(1, 0, 1)  # Magenta for lookahead
+            if hasattr(sim, 'is_landing') and sim.is_landing:
+                # Show landing spot: current x, y, ground z
+                x, y = sim.state[0], sim.state[1]
+                ground_z = sim.environment.contour_height(x, y)
+                lookahead_target = np.array([x, y, ground_z])
+            else:
+                from quadcopter_sim.main_trajectory import get_lookahead_target
+                lookahead_target = get_lookahead_target(sim.state[:3], sim.waypoints, lookahead_dist=2.0)
+            glColor3f(1, 0, 1)  # Magenta for lookahead/landing spot
             glPointSize(18)
             glBegin(GL_POINTS)
             glVertex3f(*lookahead_target)

@@ -255,6 +255,8 @@ class QuadcopterSimulation:
             return
         # --- LANDING MODE ---
         if hasattr(self, 'is_landing') and self.is_landing:
+            # Call land_fn every step to update hover timer/phase
+            self.landing_target, self.landing_spindown = land_fn(self.state)
             target = self.landing_target
             u = self.position_controller(target)
             rotor_thrusts = self.calculate_rotor_thrusts(u)
@@ -267,8 +269,14 @@ class QuadcopterSimulation:
             if self.landing_spindown and self.state[2] < 0.05 and abs(self.state[5]) < 0.2:
                 self.rotor_speeds[:] = 0
                 self.is_landing = False
+                # Reset land_fn timer/phase for next landing
+                if hasattr(land_fn, "_timer"): del land_fn._timer
+                if hasattr(land_fn, "_phase"): del land_fn._phase
             return
-
+        else:
+            # Not in landing mode, reset land_fn timer/phase if present
+            if hasattr(land_fn, "_timer"): del land_fn._timer
+            if hasattr(land_fn, "_phase"): del land_fn._phase
         # Simple LQR to follow waypoints (replace PID)
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
             self.wp_index += 1
