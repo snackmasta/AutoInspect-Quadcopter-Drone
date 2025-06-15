@@ -88,32 +88,39 @@ def body_box_terrain_penetration(roll, pitch, yaw, center, environment, size=(0.
     max_penetration = np.max(penetrations)
     return max_penetration
 
-def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy, wx, wy, wz, size=(0.8, 0.8, 0.2)):
+def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy, wx, wy, wz, size=(0.8, 0.8, 0.2), penetration_tol=0.01, velocity_deadzone=0.05):
     """
     Compute normal force and torque from terrain collision for the body box.
     Returns (force, torque) in world frame.
-    Includes damping to prevent bouncing.
+    Includes damping, penetration tolerance, and velocity deadzone to prevent jitter.
     """
     corners = get_body_box_corners(roll, pitch, yaw, center, size)
     ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in corners])
     penetrations = ground_heights - corners[:, 2]
     force = np.zeros(3)
     torque = np.zeros(3)
-    k_ground = 200.0  # N/m, spring constant
-    k_friction = 2.0   # friction coefficient
+    k_ground = 100  # N/m, spring constant
+    k_friction = 10.0   # friction coefficient
     d_ground = 10.0    # Damping coefficient for normal direction
     for i, penetration in enumerate(penetrations):
-        if penetration > 0:
-            # Normal force (upwards)
-            # Estimate contact point velocity (linear + angular)
+        if penetration > penetration_tol:
             r = corners[i] - np.array(center)
             v_contact = np.array([vx, vy, 0]) + np.cross([wx, wy, wz], r)
-            v_n = v_contact[2]  # vertical velocity at contact
-            f_n = np.array([0, 0, k_ground * penetration - d_ground * v_n])
+            v_n = v_contact[2]
+            # Deadzone for vertical velocity
+            if abs(v_n) < velocity_deadzone:
+                v_n = 0.0
+            f_n = np.array([0, 0, k_ground * (penetration - penetration_tol) - d_ground * v_n])
             # Friction force (opposes velocity at contact point)
-            f_friction = -k_friction * v_contact[:2]
+            v_xy = v_contact[:2]
+            if np.linalg.norm(v_xy) < velocity_deadzone:
+                v_xy = np.zeros(2)
+            f_friction = -k_friction * v_xy
             f_friction = np.append(f_friction, 0)
             f_total = f_n + f_friction
+            # Clamp very small forces to zero
+            if np.linalg.norm(f_total) < 1e-3:
+                f_total = np.zeros(3)
             force += f_total
             torque += np.cross(r, f_total)
     return force, torque
