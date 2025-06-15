@@ -3,19 +3,20 @@ from .main_trajectory import get_main_trajectory
 from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
+import debug_config
 
 class QuadcopterSimulation:
+    """Simulates a quadcopter with physics, control, and waypoint following."""
     def __init__(self):
-        # Physical parameters
+        # --- Physical parameters ---
         self.g = 9.81
-        self.m = 0.5  # mass (kg)
+        self.m = 5  # mass (kg)
         self.L = 0.6  # arm length (m)
-        # More realistic inertia for a 5kg, 0.6m quadcopter
-        # Ixx ≈ Iyy ≈ 0.6, Izz ≈ 0.3 (kg*m^2)
         self.I = np.diag([0.6, 0.6, 0.3])  # inertia matrix (kg*m^2)
         self.invI = np.linalg.inv(self.I)
+        self.atmosphere_density = 1.225  # kg/m^3, default sea level
         self.dt = 0.01
-        # State: [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz]
+        # --- State variables ---
         self.state = np.zeros(12)
         self.state[2] = 0  # start on ground
         self.rotor_speeds = np.zeros(4)
@@ -23,29 +24,26 @@ class QuadcopterSimulation:
         self.min_rpm = 0
         self.trajectory = []
         self.wp_index = 0
-        self.spinup_done = False  # Start as False, will ramp up
-        self.spinup_time = 2.0    # seconds for ramp-up
-        self.spinup_timer = 0.0   # timer for ramp-up
         self.blade_angles = [0.0] * 4
-        self.k_thrust = 1.5e-6  # thrust coefficient (N/(rad/s)^2) -- now per unit density
-        self.prev_thrust = 0.0
-        self.thrust_alpha = 1  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
+        self.environment = Environment(size=3, step=0.5)
+        # --- Control and mode ---
         self.manual_mode = False
         self.manual_rpms = np.zeros(4)
-        self.atmosphere_density = 1.225  # kg/m^3, default sea level
-        # --- ADJUSTED: Set k_thrust so that hover RPM gives total thrust ≈ weight ---
-        # Calculate required k_thrust for hover at ~6000 RPM (reasonable for small quadcopter)
+        self.spinup_done = False
+        self.spinup_time = 2.0
+        self.spinup_timer = 0.0
+        # --- Thrust coefficients ---
         desired_hover_rpm = 6000
         omega_hover = 2 * np.pi * desired_hover_rpm / 60.0
         hover_thrust_per_motor = (self.m * self.g) / 4
-        # k_thrust = T / (density * omega^2)
         self.k_thrust = hover_thrust_per_motor / (self.atmosphere_density * omega_hover ** 2)
         self.prev_thrust = 0.0
-        self.thrust_alpha = 1  # smoothing factor for thrust (0=no smoothing, 1=full smoothing)
-        self.manual_mode = False
-        self.manual_rpms = np.zeros(4)
-        self.atmosphere_density = 1.225  # kg/m^3, default sea level
-        self.environment = Environment(size=3, step=0.5)  # Instantiate the Environment for terrain height checks
+        self.thrust_alpha = 1
+        # --- Debug/visualization ---
+        self.rotor_thrusts = np.zeros(4)
+        self._hover_rpm_printed = False
+        self.debug_counter = 0
+        # --- Waypoints ---
         self._init_waypoints()
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
@@ -197,7 +195,7 @@ class QuadcopterSimulation:
             else:
                 self.debug_counter = 0
                 
-            if self.debug_counter % 50 == 0:
+            if debug_config.DEBUG_MANUAL_STATUS and self.debug_counter % 50 == 0:
                 print(f"MANUAL MODE")
                 print(f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}]")
                 print(f"Manual RPMs: {[int(rpm) for rpm in self.rotor_speeds]}")
@@ -376,9 +374,19 @@ class QuadcopterSimulation:
         thrust_world = R @ thrust_body
         # Linear acceleration
         a = thrust_world / self.m - np.array([0, 0, self.g])
-        # --- Ground friction ---
-        ground_z = self.environment.contour_height(x, y) if hasattr(self, 'environment') else 0.0
-        if z <= ground_z + 0.01:
+        # --- Ground/feet collision ---
+        feet = self.feet_positions()
+        feet_zs = feet[:, 2]
+        feet_grounds = np.array([
+            self.environment.contour_height(f[0], f[1]) for f in feet
+        ])
+        min_foot_clearance = np.min(feet_zs - feet_grounds)
+        # Prevent any foot from going below terrain
+        if min_foot_clearance < 0:
+            z += -min_foot_clearance  # lift drone so lowest foot is on terrain
+            vz = 0  # stop vertical velocity
+        # Apply friction if any foot is on the ground
+        if np.any(feet_zs - feet_grounds <= 0.01):
             mu = 2.0  # friction coefficient (tune as needed)
             friction_ax = -mu * vx
             friction_ay = -mu * vy
@@ -389,7 +397,8 @@ class QuadcopterSimulation:
         vz += a[2] * dt
         x += vx * dt
         y += vy * dt
-        z = max(ground_z, z + vz * dt)  # don't go below terrain        # Angular acceleration (Euler's equation)
+        # z update is now handled by feet/terrain collision above
+        # Angular acceleration (Euler's equation)
         omega = np.array([wx, wy, wz])
         tau = np.array([tau_x, tau_y, tau_z])
         # --- Air drag torque ---
@@ -426,10 +435,10 @@ class QuadcopterSimulation:
         self.state = np.array([x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz])
 
         # Debug: print control input and resulting thrust vector
-        print(f"[PHYSICS DEBUG] Input u: {u}")
-        print(f"[PHYSICS DEBUG] Thrust body: {thrust_body}, Thrust world: {thrust_world}")
-        print(f"[PHYSICS DEBUG] Acceleration: {a}")
-        print(f"[PHYSICS DEBUG] Position: {[x, y, z]}, Velocity: {[vx, vy, vz]}")
+        self._debug_print(f"[PHYSICS DEBUG] Input u: {u}")
+        self._debug_print(f"[PHYSICS DEBUG] Thrust body: {thrust_body}, Thrust world: {thrust_world}")
+        self._debug_print(f"[PHYSICS DEBUG] Acceleration: {a}")
+        self._debug_print(f"[PHYSICS DEBUG] Position: {[x, y, z]}, Velocity: {[vx, vy, vz]}")
 
     def reset(self):
         self.state[:] = 0
@@ -565,3 +574,7 @@ class QuadcopterSimulation:
         self.landing_traj = land_fn(self.state)
         # Optionally, set a flag to indicate landing mode
         self.is_landing = True
+
+    def _debug_print(self, msg):
+        if debug_config.DEBUG_PHYSICS:
+            print(msg)

@@ -15,15 +15,34 @@ class Environment:
         n = self.noise([x * self.scale, y * self.scale])
         return n * 4.0  # scale to get a nice range
 
-    def draw(self):
-        glColor3f(0.3, 0.5, 0.3)  # Green color for the ground
-        glBegin(GL_QUADS)
-        glVertex3f(-self.size, -self.size, self.contour_height(-self.size, -self.size))
-        glVertex3f(self.size, -self.size, self.contour_height(self.size, -self.size))
-        glVertex3f(self.size, self.size, self.contour_height(self.size, self.size))
-        glVertex3f(-self.size, self.size, self.contour_height(-self.size, self.size))
-        glEnd()
-        # Removed wireframe drawing loops
+    def draw(self, wireframe=True):
+        if wireframe:
+            # Draw light grey wireframe for unscanned terrain
+            glColor3f(0.8, 0.8, 0.8)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+            step = self.step
+            x_range = np.arange(-self.size, self.size, step)
+            y_range = np.arange(-self.size, self.size, step)
+            for x in x_range:
+                glBegin(GL_LINE_STRIP)
+                for y in y_range:
+                    glVertex3f(x, y, self.contour_height(x, y))
+                glEnd()
+            for y in y_range:
+                glBegin(GL_LINE_STRIP)
+                for x in x_range:
+                    glVertex3f(x, y, self.contour_height(x, y))
+                glEnd()
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+        else:
+            # Solid color ground (for scanned/known terrain, if needed)
+            glColor3f(0.3, 0.5, 0.3)
+            glBegin(GL_QUADS)
+            glVertex3f(-self.size, -self.size, self.contour_height(-self.size, -self.size))
+            glVertex3f(self.size, -self.size, self.contour_height(self.size, -self.size))
+            glVertex3f(self.size, self.size, self.contour_height(self.size, self.size))
+            glVertex3f(-self.size, self.size, self.contour_height(-self.size, self.size))
+            glEnd()
 
     def get_scanned_map(self, drone_pos, fov=60, res=32):
         """

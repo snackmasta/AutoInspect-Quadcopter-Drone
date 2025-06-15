@@ -1,0 +1,16 @@
+# Central debug config for all debug toggles
+DEBUG_KEY_EVENT = True
+DEBUG_IMGUI_CAPTURE = True
+DEBUG_ACTION_IGNORE = True
+DEBUG_MANUAL_MODE_OFF = True
+DEBUG_KEY_W = True
+DEBUG_KEY_S = True
+DEBUG_KEY_A = True
+DEBUG_KEY_D = True
+DEBUG_KEY_Q = True
+DEBUG_KEY_E = True
+DEBUG_KEY_R = True
+DEBUG_KEY_F = True
+DEBUG_MANUAL_RPMS = False
+DEBUG_PHYSICS = False
+DEBUG_MANUAL_STATUS = False

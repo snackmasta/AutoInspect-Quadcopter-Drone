@@ -26,7 +26,7 @@ class Renderer:
         # Camera interaction state
         self._dragging = False
         self._last_mouse = (0, 0)
-        self.environment = Environment(size=3, step=0.5)
+        self.environment = Environment(size=20, step=2.0)  # Increased step for performance
         self.show_lidar = False  # Toggle for LiDAR visualization (default OFF)
         self.scanned_points = []  # Accumulated scanned terrain points
         self.vbo = None  # Vertex Buffer Object for scanned points
@@ -177,7 +177,12 @@ class Renderer:
         cam_y = center[1] + r * np.cos(pitch) * np.cos(yaw)
         cam_z = center[2] + r * np.sin(pitch)
         gluLookAt(cam_x, cam_y, cam_z, center[0], center[1], center[2], 0, 0, 1)
-        # self.draw_ground_grid()  # Remove or comment out this line to hide the solid green environment
+
+        # --- Always render unscanned terrain as grey wireframe ---
+        glLineWidth(1.5)
+        self.environment.draw(wireframe=True)
+        glLineWidth(1.0)  # Restore default
+
         glColor3f(0, 0, 1)  # Changed to blue
         glPointSize(8)
         glBegin(GL_POINTS)
