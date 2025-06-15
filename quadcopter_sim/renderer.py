@@ -17,6 +17,7 @@ from OpenGL.GLU import *
 import imgui
 from quadcopter_sim.environment import Environment
 from .drone_body_box import draw_drone_body_box
+from .thrust import Thrust
 
 class Renderer:
     def __init__(self, sim):
@@ -33,6 +34,7 @@ class Renderer:
         self.vbo = None  # Vertex Buffer Object for scanned points
         self.vbo_needs_update = True
         self.show_camera = False  # Camera visualization toggle, default off
+        self.thrust_visual = Thrust(sim.k_thrust, sim.atmosphere_density)
 
     def handle_mouse(self, window):
         import glfw
@@ -315,73 +317,19 @@ class Renderer:
                     glVertex3f(xs[j], ys[i], img[i, j])
                 glEnd()
         imgui.separator()
-        self.draw_thrust_arrows(sim)
-
         # Draw blue box outline for drone body, with orientation from module
         roll, pitch, yaw = np.degrees(sim.state[6:9])
         draw_drone_body_box(roll, pitch, yaw, center)
 
-    def draw_thrust_arrows(self, sim):
-        """Draw arrows showing the thrust force from each rotor"""
-        if not hasattr(sim, 'rotor_thrusts'):
-            return
-            
-        rotors = sim.rotor_positions()
-        max_thrust = max(sim.rotor_thrusts) if max(sim.rotor_thrusts) > 0 else 1.0
-        
-        # Draw thrust arrows downward from each rotor
-        glLineWidth(4)
-        for i, (rotor_pos, thrust) in enumerate(zip(rotors, sim.rotor_thrusts)):
-            if thrust <= 0:
-                continue
-                
-            # Normalize thrust to arrow length (0.1 to 1.0 meters)
-            arrow_length = 0.1 + (thrust / max_thrust) * 0.9
-            
-            # Arrow color based on thrust intensity
-            intensity = thrust / max_thrust
-            glColor3f(1.0, 1.0 - intensity, 0.0)  # Yellow to Red gradient
-            
-            # Draw main arrow shaft (downward)
-            start_pos = np.array(rotor_pos)
-            end_pos = start_pos - np.array([0, 0, arrow_length])
-            
-            glBegin(GL_LINES)
-            glVertex3f(*start_pos)
-            glVertex3f(*end_pos)
-            glEnd()
-            
-            # Draw arrowhead
-            arrow_tip = end_pos
-            arrow_size = 0.05
-            
-            glBegin(GL_TRIANGLES)
-            # Arrowhead pointing down
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glEnd()
-            
-            # Draw thrust value as text near the arrow
-            # Note: This is a simplified text rendering - in a real app you'd use a proper text renderer
-            glPushMatrix()
-            glTranslatef(rotor_pos[0] + 0.1, rotor_pos[1] + 0.1, rotor_pos[2])
-            glColor3f(1, 1, 1)
-            # We'll just draw the rotor number for now since OpenGL text rendering is complex
-            # You could integrate a text rendering library here
-            glPopMatrix()
+        # Draw rotor numbers above each rotor
+        from OpenGL.GLUT import glutInit, glutBitmapCharacter, GLUT_BITMAP_HELVETICA_18
+        glutInit()
+        for i, r in enumerate(rotors):
+            glColor3f(0, 0, 0)
+            # Offset above rotor (z+0.12)
+            glRasterPos3f(r[0], r[1], r[2] + 0.12)
+            for c in str(i+1):
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(c))
 
     def is_chunk_overlapping(self, pos1, pos2, fov=60, altitude=None):
         """Return True if two camera chunks overlap based on their positions and FOV coverage."""

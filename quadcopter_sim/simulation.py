@@ -3,6 +3,7 @@ from .main_trajectory import get_main_trajectory
 from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
+from .thrust import Thrust
 import debug_config
 
 class QuadcopterSimulation:
@@ -45,6 +46,7 @@ class QuadcopterSimulation:
         self.debug_counter = 0
         # --- Waypoints ---
         self._init_waypoints()
+        self.thrust_model = Thrust(self.k_thrust, self.atmosphere_density)
 
     def _insert_hover_after_sharp_turns(self, waypoints, hover_steps=50, angle_threshold_deg=30):
         # Insert a hover (repeat waypoint) after sharp turns, and mark them for stabilization
@@ -169,7 +171,8 @@ class QuadcopterSimulation:
             # For visualization, update blade angles
             for i in range(4):
                 self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360
-            thrusts = self.k_thrust * self.atmosphere_density * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
+            # Use thrust module for thrust calculation
+            thrusts = self.thrust_model.compute_thrusts(self.rotor_speeds)
             total_thrust = np.sum(thrusts)
             hover_thrust = self.m * self.g
             if debug_config.DEBUG_MANUAL_STATUS:
@@ -177,7 +180,7 @@ class QuadcopterSimulation:
                 if abs(total_thrust - hover_thrust) < 1e-2:
                     print("[MANUAL WARNING] Thrust is at hover. Increase/decrease RPM to move vertically.")
             # Physics update: use the sum of manual thrusts and compute torques
-            thrusts = self.k_thrust * self.atmosphere_density * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
+            thrusts = self.thrust_model.compute_thrusts(self.rotor_speeds)
             total_thrust = np.sum(thrusts)
             
             # Store individual thrusts for visualization
@@ -511,11 +514,14 @@ class QuadcopterSimulation:
         # Return positions of the 4 rotors based on current state (x, y, z, roll, pitch, yaw)
         x, y, z, _, _, _, roll, pitch, yaw, _, _, _ = self.state
         # Rotor offsets in body frame
+        # Swap rotor 2 and 4 for all usages in this function
+        # Original: [FL, FR, RR, RL] = [0, 1, 2, 3]
+        # Swap FR (1) and RL (3):
         offsets = np.array([
-            [-self.L/2, self.L/2, 0],
-            [self.L/2, self.L/2, 0],
-            [self.L/2, -self.L/2, 0],
-            [-self.L/2, -self.L/2, 0]
+            [-self.L/2, self.L/2, 0],   # FL (0)
+            [-self.L/2, -self.L/2, 0],  # RL (was 3, now 1)
+            [self.L/2, -self.L/2, 0],   # RR (2)
+            [self.L/2, self.L/2, 0]     # FR (was 1, now 3)
         ])
         # Rotation matrix from body to world
         cr, sr = np.cos(roll), np.sin(roll)
