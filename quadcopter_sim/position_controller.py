@@ -1,4 +1,5 @@
 import numpy as np
+from quadcopter_sim.main_trajectory import get_lookahead_target
 
 # PID gains (tuned for minimal oscillation)
 # Position controller gains
@@ -11,11 +12,13 @@ KD_ATT = 2.0  # Lowered for less aggressive attitude
 KP_YAW = 1.2  # Lowered for smoother yaw
 KD_YAW = 1.0
 
-def position_controller(state, target, hover_indices=None, wp_index=None, waypoints=None, yaw_control_enabled=True, g=9.81, m=1.0):
+def position_controller(state, target, hover_indices=None, wp_index=None, waypoints=None, yaw_control_enabled=True, g=9.81, m=1.0, lookahead_dist=2.0):
     pos, vel = state[:3], state[3:6]
+    # If waypoints are provided, use lookahead target
+    if waypoints is not None and len(waypoints) > 1:
+        target = get_lookahead_target(pos, waypoints, lookahead_dist)
     roll, pitch, yaw = state[6:9]
     wx, wy, wz = state[9:12]
-    # Use tuned gains
     kp, kd = KP_POS, KD_POS
     acc_des = kp * (target - pos) - kd * vel
     # Limit desired acceleration to avoid aggressive commands

@@ -16,3 +16,52 @@ def get_main_trajectory():
     # Kembali ke home
     wps.append(np.array([0, 0, altitude]))
     return wps
+
+def get_lookahead_target(pos, waypoints, lookahead_dist=2.0):
+    """
+    Given the current position and a list of waypoints, find a target point
+    that is lookahead_dist ahead along the path.
+    """
+    if len(waypoints) < 2:
+        return waypoints[0] if waypoints else pos
+    # Find closest segment
+    min_dist = float('inf')
+    closest_idx = 0
+    for i in range(len(waypoints) - 1):
+        seg_start = waypoints[i]
+        seg_end = waypoints[i+1]
+        seg_vec = seg_end - seg_start
+        seg_len = np.linalg.norm(seg_vec)
+        if seg_len < 1e-6:
+            continue
+        proj = np.dot(pos - seg_start, seg_vec) / seg_len
+        proj = np.clip(proj, 0, seg_len)
+        closest_point = seg_start + seg_vec * (proj / seg_len)
+        dist = np.linalg.norm(pos - closest_point)
+        if dist < min_dist:
+            min_dist = dist
+            closest_idx = i
+            closest_proj = proj
+    # Move lookahead_dist along the path from the closest point
+    seg_start = waypoints[closest_idx]
+    seg_end = waypoints[closest_idx+1]
+    seg_vec = seg_end - seg_start
+    seg_len = np.linalg.norm(seg_vec)
+    lookahead_proj = closest_proj + lookahead_dist
+    if lookahead_proj <= seg_len:
+        target = seg_start + seg_vec * (lookahead_proj / seg_len)
+    else:
+        # Move to next segments if needed
+        remaining = lookahead_proj - seg_len
+        idx = closest_idx + 1
+        while remaining > 0 and idx < len(waypoints) - 1:
+            next_seg = waypoints[idx+1] - waypoints[idx]
+            next_len = np.linalg.norm(next_seg)
+            if remaining <= next_len:
+                target = waypoints[idx] + next_seg * (remaining / next_len)
+                break
+            remaining -= next_len
+            idx += 1
+        else:
+            target = waypoints[-1]
+    return target
