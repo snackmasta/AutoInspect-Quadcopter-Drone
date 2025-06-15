@@ -4,7 +4,7 @@ from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
 from .thrust import Thrust
-from .drone_body_box import get_body_box_corners, body_box_terrain_penetration
+from .drone_body_box import get_body_box_corners, body_box_terrain_penetration, body_box_terrain_forces
 import debug_config
 
 class QuadcopterSimulation:
@@ -411,18 +411,27 @@ class QuadcopterSimulation:
         y += vy * dt
         z += vz * dt  # update z position with new vertical velocity
         # --- Ground collision correction (after position update) ---
-        # Use body box for collision
         roll, pitch, yaw = self.state[6:9]
         center = [x, y, z]
-        penetration = body_box_terrain_penetration(roll, pitch, yaw, center, self.environment)
-        if penetration > 0:
-            z += penetration  # Move up so box sits on terrain
-            vz = 0
+        # Compute normal force and torque from terrain collision
+        force_ground, torque_ground = body_box_terrain_forces(
+            roll, pitch, yaw, center, self.environment, self.m, self.g, vx, vy, wx, wy, wz)
+        # Apply normal force to acceleration
+        a += force_ground / self.m
+        # Reflect ground force directly to velocity (impulse-like effect)
+        if np.linalg.norm(force_ground) > 0:
+            v_force = force_ground / self.m * dt
+            vx += v_force[0]
+            vy += v_force[1]
+            vz += v_force[2]
+        # Define tau before using it
+        tau = np.array([tau_x, tau_y, tau_z])
+        # Apply torque to tau
+        tau += torque_ground
         # --- Air drag torque ---
         omega_body = np.array([wx, wy, wz])  # Use body angular velocity for drag
         k_drag = 0.3  # drag coefficient (increased for faster angular damping)
         tau_drag = -k_drag * omega_body
-        tau = np.array([tau_x, tau_y, tau_z])  # Ensure tau is defined
         tau += tau_drag
         omega_dot = self.invI @ (tau - np.cross(omega_body, self.I @ omega_body))
         wx += omega_dot[0] * dt

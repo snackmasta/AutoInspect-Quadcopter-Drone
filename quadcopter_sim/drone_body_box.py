@@ -87,3 +87,30 @@ def body_box_terrain_penetration(roll, pitch, yaw, center, environment, size=(0.
     penetrations = ground_heights - corners[:, 2]
     max_penetration = np.max(penetrations)
     return max_penetration
+
+def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy, wx, wy, wz, size=(0.8, 0.8, 0.2)):
+    """
+    Compute normal force and torque from terrain collision for the body box.
+    Returns (force, torque) in world frame.
+    """
+    corners = get_body_box_corners(roll, pitch, yaw, center, size)
+    ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in corners])
+    penetrations = ground_heights - corners[:, 2]
+    force = np.zeros(3)
+    torque = np.zeros(3)
+    k_ground = 2000.0  # N/m, spring constant
+    k_friction = 2.0   # friction coefficient
+    for i, penetration in enumerate(penetrations):
+        if penetration > 0:
+            # Normal force (upwards)
+            f_n = np.array([0, 0, k_ground * penetration])
+            # Friction force (opposes velocity at contact point)
+            # Estimate contact point velocity (linear + angular)
+            r = corners[i] - np.array(center)
+            v_contact = np.array([vx, vy, 0]) + np.cross([wx, wy, wz], r)
+            f_friction = -k_friction * v_contact[:2]
+            f_friction = np.append(f_friction, 0)
+            f_total = f_n + f_friction
+            force += f_total
+            torque += np.cross(r, f_total)
+    return force, torque
