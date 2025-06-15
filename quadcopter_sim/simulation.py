@@ -10,7 +10,7 @@ class QuadcopterSimulation:
     def __init__(self):
         # --- Physical parameters ---
         self.g = 9.81
-        self.m = 5  # mass (kg)
+        self.m = 0.5  # mass (kg)
         self.L = 0.6  # arm length (m)
         self.I = np.diag([0.6, 0.6, 0.3])  # inertia matrix (kg*m^2)
         self.invI = np.linalg.inv(self.I)
@@ -164,12 +164,19 @@ class QuadcopterSimulation:
                 rpm_hover = self.get_hover_rpm()
                 print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f}")
                 self._hover_rpm_printed = True
-            
             # In manual mode, set rotor speeds directly
             self.rotor_speeds[:] = np.clip(self.manual_rpms, self.min_rpm, self.max_rpm)
             # For visualization, update blade angles
             for i in range(4):
-                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360            # Physics update: use the sum of manual thrusts and compute torques
+                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360
+            thrusts = self.k_thrust * self.atmosphere_density * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
+            total_thrust = np.sum(thrusts)
+            hover_thrust = self.m * self.g
+            if debug_config.DEBUG_MANUAL_STATUS:
+                print(f"[MANUAL] Total thrust: {total_thrust:.2f} N, Hover thrust: {hover_thrust:.2f} N, Delta: {total_thrust - hover_thrust:.2f} N")
+                if abs(total_thrust - hover_thrust) < 1e-2:
+                    print("[MANUAL WARNING] Thrust is at hover. Increase/decrease RPM to move vertically.")
+            # Physics update: use the sum of manual thrusts and compute torques
             thrusts = self.k_thrust * self.atmosphere_density * (2 * np.pi * self.rotor_speeds / 60.0) ** 2
             total_thrust = np.sum(thrusts)
             
@@ -329,6 +336,20 @@ class QuadcopterSimulation:
             rpm = np.clip(rpm, self.min_rpm, self.max_rpm)
             self.rotor_speeds[i] = rpm
 
+        # Debug: Print thrust at max RPM and hover RPM
+        if debug_config.DEBUG_MANUAL_STATUS:
+            max_rpm = self.max_rpm
+            hover_rpm = self.get_hover_rpm()
+            omega_max = 2 * np.pi * max_rpm / 60.0
+            omega_hover = 2 * np.pi * hover_rpm / 60.0
+            thrust_max = self.k_thrust * self.atmosphere_density * (omega_max ** 2)
+            thrust_hover = self.k_thrust * self.atmosphere_density * (omega_hover ** 2)
+            total_thrust_max = thrust_max * 4
+            total_thrust_hover = thrust_hover * 4
+            print(f"[DEBUG] Max RPM: {max_rpm}, Hover RPM: {hover_rpm:.2f}")
+            print(f"[DEBUG] Thrust per motor at max RPM: {thrust_max:.2f} N, at hover: {thrust_hover:.2f} N")
+            print(f"[DEBUG] Total thrust at max RPM: {total_thrust_max:.2f} N, at hover: {total_thrust_hover:.2f} N, Weight: {self.m * self.g:.2f} N")
+        
         # At the end of the step, check for crash/low altitude
         self.check_crash_or_low_altitude()
         self.check_recovery()
@@ -384,7 +405,7 @@ class QuadcopterSimulation:
         # Prevent any foot from going below terrain
         if min_foot_clearance < 0:
             z += -min_foot_clearance  # lift drone so lowest foot is on terrain
-            vz = 0  # stop vertical velocity
+            vz = max(vz, 0)  # only stop downward velocity, allow upward movement
         # Apply friction if any foot is on the ground
         if np.any(feet_zs - feet_grounds <= 0.01):
             mu = 2.0  # friction coefficient (tune as needed)
@@ -397,7 +418,7 @@ class QuadcopterSimulation:
         vz += a[2] * dt
         x += vx * dt
         y += vy * dt
-        # z update is now handled by feet/terrain collision above
+        z += vz * dt  # update z position with new vertical velocity
         # Angular acceleration (Euler's equation)
         omega = np.array([wx, wy, wz])
         tau = np.array([tau_x, tau_y, tau_z])

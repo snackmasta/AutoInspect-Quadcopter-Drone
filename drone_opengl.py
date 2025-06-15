@@ -128,14 +128,11 @@ def main():
     glfw.set_key_callback(window, key_callback)
     print("[DEBUG] key_callback registered (late)")
     while not glfw.window_should_close(window):
-        print("[DEBUG] main loop running")
         current_time = time.time()
         delta_time = current_time - last_time
         last_time = current_time
         glfw.poll_events()
-        print("[DEBUG] before impl.process_inputs()")
-        # impl.process_inputs()  # TEMPORARILY DISABLED FOR DEBUGGING
-        print("[DEBUG] after impl.process_inputs()")
+        impl.process_inputs()  # TEMPORARILY DISABLED FOR DEBUGGING
         renderer.handle_mouse(window)
         width, height = glfw.get_framebuffer_size(window)
         renderer.reshape(width, height)
