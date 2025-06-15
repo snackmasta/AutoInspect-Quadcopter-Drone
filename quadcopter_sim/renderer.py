@@ -331,6 +331,16 @@ class Renderer:
             for c in str(i+1):
                 glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(c))
 
+        # Draw thrust arrows for each rotor (scaled 0-12000 RPM)
+        Thrust.draw_thrust_arrows(
+            rotors,
+            sim.rotor_speeds,
+            min_rpm=0,
+            max_rpm=12000,
+            thrust_coefficient=self.thrust_visual.thrust_coefficient,
+            atmosphere_density=self.thrust_visual.atmosphere_density
+        )
+
     def is_chunk_overlapping(self, pos1, pos2, fov=60, altitude=None):
         """Return True if two camera chunks overlap based on their positions and FOV coverage."""
         if altitude is None:
