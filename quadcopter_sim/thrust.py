@@ -100,3 +100,46 @@ class Thrust:
             glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
             glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
             glEnd()
+    @staticmethod
+    def calculate_rotor_thrusts(u, L, min_thrust=1e-3):
+        """
+        Convert control inputs [tau_x, tau_y, total_thrust, 0, 0, tau_z]
+        to individual rotor thrusts [T1, T2, T3, T4]
+        Rotor layout (+ configuration):
+        T1 (FL) --- T2 (FR)
+           |         |
+           |    +    |
+           |         |
+        T4 (RL) --- T3 (RR)
+        :param u: control input vector [tau_x, tau_y, total_thrust, 0, 0, tau_z]
+        :param L: arm length (meters)
+        :param min_thrust: minimum thrust per rotor (N)
+        :return: np.array([T1, T2, T3, T4])
+        """
+        tau_x, tau_y, total_thrust, _, _, tau_z = u
+        L = L / 2  # half arm length
+        T_base = total_thrust / 4.0
+        k_yaw = 1e-7  # drag torque coefficient
+        d_roll = tau_x / (2 * L) if L > 0 else 0
+        d_pitch = tau_y / (2 * L) if L > 0 else 0
+        d_yaw = 0.0  # Remove yaw differential
+        T1 = T_base + d_roll + d_pitch + d_yaw  # Front Left
+        T2 = T_base + d_roll - d_pitch - d_yaw  # Front Right
+        T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
+        T4 = T_base - d_roll + d_pitch - d_yaw  # Rear Left
+        thrusts = np.array([T1, T2, T3, T4])
+        min_val = np.min(thrusts)
+        if min_val < min_thrust:
+            diff = min_thrust - min_val
+            thrusts += diff
+            total = np.sum(thrusts)
+            if total > total_thrust:
+                thrusts = thrusts * (total_thrust / total)
+        max_diff = 0.6 * T_base
+        max_val = np.max(thrusts)
+        if max_val - np.min(thrusts) > max_diff:
+            mean_val = np.mean(thrusts)
+            thrusts = np.clip(thrusts, mean_val - max_diff/2, mean_val + max_diff/2)
+            thrusts = thrusts * (total_thrust / np.sum(thrusts))
+        thrusts = np.clip(thrusts, min_thrust, None)
+        return thrusts

@@ -604,31 +604,7 @@ class QuadcopterSimulation:
         d_roll = tau_x / (2 * L) if L > 0 else 0
         d_pitch = tau_y / (2 * L) if L > 0 else 0
         d_yaw = 0.0  # Remove yaw differential
-        T1 = T_base + d_roll + d_pitch + d_yaw  # Front Left
-        T2 = T_base + d_roll - d_pitch - d_yaw  # Front Right
-        T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
-        T4 = T_base - d_roll + d_pitch - d_yaw  # Rear Left
-        thrusts = np.array([T1, T2, T3, T4])
-        min_thrust = 1e-3
-        # --- New: Always keep all rotors above min_thrust and balance ---
-        min_val = np.min(thrusts)
-        if min_val < min_thrust:
-            # Shift all thrusts up so the minimum is at least min_thrust
-            diff = min_thrust - min_val
-            thrusts += diff
-            # If this causes total thrust to exceed the command, scale all down proportionally
-            total = np.sum(thrusts)
-            if total > total_thrust:
-                thrusts = thrusts * (total_thrust / total)
-        # Optionally: keep the difference between max and min small (balance)
-        max_diff = 0.6 * T_base  # limit max difference between rotors
-        max_val = np.max(thrusts)
-        if max_val - np.min(thrusts) > max_diff:
-            mean_val = np.mean(thrusts)
-            thrusts = np.clip(thrusts, mean_val - max_diff/2, mean_val + max_diff/2)
-            # Rebalance to keep total thrust
-            thrusts = thrusts * (total_thrust / np.sum(thrusts))
-        thrusts = np.clip(thrusts, min_thrust, None)
+        thrusts = Thrust.calculate_rotor_thrusts(u, self.L)
         return thrusts
 
     def takeoff(self, target_altitude=3.0):
