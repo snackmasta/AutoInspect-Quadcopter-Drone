@@ -419,6 +419,11 @@ class QuadcopterSimulation:
             friction_ay = -mu * vy
             a[0] += friction_ax
             a[1] += friction_ay
+            # --- NEW: Apply angular friction when on ground ---
+            k_ground_angular_friction = 2.0  # Nm*s, tune as needed
+            tau_x += -k_ground_angular_friction * wx
+            tau_y += -k_ground_angular_friction * wy
+            tau_z += -k_ground_angular_friction * wz
         # --- NEW: Apply ground reaction force and torque for each foot in contact ---
         ground_reaction_tau = np.zeros(3)
         for i, (fz, fg, foot_pos) in enumerate(zip(feet_zs, feet_grounds, feet)):
@@ -440,7 +445,7 @@ class QuadcopterSimulation:
         tau = np.array([tau_x, tau_y, tau_z])
         # --- Air drag torque ---
         omega_body = np.array([wx, wy, wz])  # Use body angular velocity for drag
-        k_drag = 0.15  # drag coefficient (tune as needed)
+        k_drag = 0.3  # drag coefficient (increased for faster angular damping)
         tau_drag = -k_drag * omega_body
         tau += tau_drag
         omega_dot = self.invI @ (tau - np.cross(omega_body, self.I @ omega_body))
