@@ -4,6 +4,7 @@ from .lqr_controller import lqr_position_attitude_controller
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
 from .thrust import Thrust
+from .drone_body_box import get_body_box_corners, body_box_terrain_penetration
 import debug_config
 
 class QuadcopterSimulation:
@@ -410,12 +411,13 @@ class QuadcopterSimulation:
         y += vy * dt
         z += vz * dt  # update z position with new vertical velocity
         # --- Ground collision correction (after position update) ---
-        # Remove all foot/feet logic
-        # Add simple ground collision response
-        ground_height = self.environment.contour_height(x, y)
-        if z < ground_height:
-            z = ground_height  # Snap to ground
-            vz = 0  # Stop any downward velocity
+        # Use body box for collision
+        roll, pitch, yaw = self.state[6:9]
+        center = [x, y, z]
+        penetration = body_box_terrain_penetration(roll, pitch, yaw, center, self.environment)
+        if penetration > 0:
+            z += penetration  # Move up so box sits on terrain
+            vz = 0
         # --- Air drag torque ---
         omega_body = np.array([wx, wy, wz])  # Use body angular velocity for drag
         k_drag = 0.3  # drag coefficient (increased for faster angular damping)

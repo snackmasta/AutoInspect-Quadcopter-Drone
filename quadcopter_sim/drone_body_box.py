@@ -76,3 +76,14 @@ def get_body_box_corners(roll, pitch, yaw, center, size=(0.8, 0.8, 0.2)):
     ])
     world_corners = (R @ corners.T).T + np.array(center)
     return world_corners
+
+def body_box_terrain_penetration(roll, pitch, yaw, center, environment, size=(0.8, 0.8, 0.2)):
+    """
+    Returns the maximum penetration depth of the body box below the terrain.
+    If > 0, the box is colliding with the terrain.
+    """
+    corners = get_body_box_corners(roll, pitch, yaw, center, size)
+    ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in corners])
+    penetrations = ground_heights - corners[:, 2]
+    max_penetration = np.max(penetrations)
+    return max_penetration
