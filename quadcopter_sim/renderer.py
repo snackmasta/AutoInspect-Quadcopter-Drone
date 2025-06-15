@@ -16,6 +16,7 @@ from OpenGL.arrays import vbo
 from OpenGL.GLU import *
 import imgui
 from quadcopter_sim.environment import Environment
+from .drone_body_box import draw_drone_body_box
 
 class Renderer:
     def __init__(self, sim):
@@ -315,6 +316,10 @@ class Renderer:
                 glEnd()
         imgui.separator()
         self.draw_thrust_arrows(sim)
+
+        # Draw blue box outline for drone body, with orientation from module
+        roll, pitch, yaw = np.degrees(sim.state[6:9])
+        draw_drone_body_box(roll, pitch, yaw, center)
 
     def draw_thrust_arrows(self, sim):
         """Draw arrows showing the thrust force from each rotor"""
