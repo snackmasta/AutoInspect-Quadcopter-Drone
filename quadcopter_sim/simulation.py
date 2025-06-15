@@ -415,10 +415,22 @@ class QuadcopterSimulation:
         # Apply friction if any foot is on the ground
         if np.any(feet_zs - feet_grounds <= 0.01):
             mu = 2.0  # friction coefficient (tune as needed)
-            friction_ax = -mu * vx
-            friction_ay = -mu * vy
-            a[0] += friction_ax
-            a[1] += friction_ay
+            # Estimate normal force as weight (or sum of ground reaction if available)
+            N = self.m * self.g  # Approximate normal force
+            v_xy = np.array([vx, vy])
+            speed_xy = np.linalg.norm(v_xy)
+            if speed_xy > 1e-4:
+                # Kinetic friction, direction opposes velocity
+                friction_force = -mu * N * v_xy / speed_xy
+                # Clamp friction so it doesn't reverse velocity in one step
+                max_friction = self.m * speed_xy / dt
+                friction_force = np.clip(friction_force, -max_friction, max_friction)
+                a[0] += friction_force[0] / self.m
+                a[1] += friction_force[1] / self.m
+            else:
+                # Static friction: zero out very small velocities
+                vx = 0.0
+                vy = 0.0
             # --- NEW: Apply angular friction when on ground ---
             k_ground_angular_friction = 2.0  # Nm*s, tune as needed
             tau_x += -k_ground_angular_friction * wx
