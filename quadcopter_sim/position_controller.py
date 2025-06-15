@@ -6,13 +6,13 @@ from quadcopter_sim.main_trajectory import get_lookahead_target
 KP_POS = 0.8  # Lowered for smoother response
 KD_POS = 5.0  # Increased for stronger damping
 # Attitude controller gains
-KP_ATT = 3.0  # Lowered for less aggressive attitude
-KD_ATT = 2.0  # Lowered for less aggressive attitude
+KP_ATT = 6.0  # Lowered for less aggressive attitude
+KD_ATT = 4.0  # Lowered for less aggressive attitude
 # Yaw controller gains
 KP_YAW = 1.2  # Lowered for smoother yaw
 KD_YAW = 1.0
 
-def position_controller(state, target, hover_indices=None, wp_index=None, waypoints=None, yaw_control_enabled=True, g=9.81, m=1.0, lookahead_dist=2.0):
+def position_controller(state, target, hover_indices=None, wp_index=None, waypoints=None, yaw_control_enabled=True, g=9.81, m=3.0, lookahead_dist=2.0, target_speed=3.0):
     pos, vel = state[:3], state[3:6]
     # If waypoints are provided, use lookahead target
     if waypoints is not None and len(waypoints) > 1:
@@ -20,9 +20,19 @@ def position_controller(state, target, hover_indices=None, wp_index=None, waypoi
     roll, pitch, yaw = state[6:9]
     wx, wy, wz = state[9:12]
     kp, kd = KP_POS, KD_POS
-    acc_des = kp * (target - pos) - kd * vel
+    # --- Target speed logic ---
+    direction = target - pos
+    distance = np.linalg.norm(direction[:2])
+    if distance > 1e-3:
+        direction_xy = direction[:2] / distance
+        desired_vel_xy = direction_xy * min(target_speed, distance)  # Don't overshoot
+    else:
+        desired_vel_xy = np.zeros(2)
+    desired_vel = np.array([desired_vel_xy[0], desired_vel_xy[1], 0.0])
+    vel_error = desired_vel - vel
+    acc_des = kp * (target - pos) + kd * vel_error
     # Limit desired acceleration to avoid aggressive commands
-    acc_max = 6.0  # m/s^2
+    acc_max = 12.0  # m/s^2
     acc_des = np.clip(acc_des, -acc_max, acc_max)
     acc_des[2] += g
     dx = target[0] - pos[0]

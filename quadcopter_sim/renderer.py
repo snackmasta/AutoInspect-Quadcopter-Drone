@@ -157,9 +157,33 @@ class Renderer:
             if i < 3:
                 imgui.same_line()
         imgui.new_line()
-        # Waypoint progress as a horizontal bar
+        # Mission progress: use distance along path instead of wp_index
+        from quadcopter_sim.main_trajectory import get_lookahead_target
+        pos = sim.state[:3]
+        waypoints = sim.waypoints
+        # Compute total path length
+        total_length = sum(np.linalg.norm(waypoints[i+1] - waypoints[i]) for i in range(len(waypoints)-1))
+        # Find closest segment and progress along path
+        min_dist = float('inf')
+        progress_length = 0.0
+        closest_proj = 0.0
+        for i in range(len(waypoints) - 1):
+            seg_start = waypoints[i]
+            seg_end = waypoints[i+1]
+            seg_vec = seg_end - seg_start
+            seg_len = np.linalg.norm(seg_vec)
+            if seg_len < 1e-6:
+                continue
+            proj = np.dot(pos - seg_start, seg_vec) / seg_len
+            proj = np.clip(proj, 0, seg_len)
+            closest_point = seg_start + seg_vec * (proj / seg_len)
+            dist = np.linalg.norm(pos - closest_point)
+            if dist < min_dist:
+                min_dist = dist
+                progress_length = sum(np.linalg.norm(waypoints[j+1] - waypoints[j]) for j in range(i)) + proj
+        progress_ratio = min(progress_length / total_length, 1.0)
         imgui.text("Mission Progress")
-        imgui.progress_bar((sim.wp_index + 1) / len(sim.waypoints), size=(320, 18), overlay=f"{sim.wp_index+1}/{len(sim.waypoints)}")
+        imgui.progress_bar(progress_ratio, size=(320, 18), overlay=f"{int(progress_ratio*100)}%")
         # Altitude plot at the bottom
         if len(sim.trajectory) > 1:
             altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
@@ -232,11 +256,12 @@ class Renderer:
             glVertex3f(0, 0.06, 0)
             glEnd()
             glPopMatrix()
-        glColor3f(0, 1, 0)
-        glPointSize(14)
-        glBegin(GL_POINTS)
-        glVertex3f(*sim.waypoints[sim.wp_index])
-        glEnd()
+        # Remove the old cyan/green waypoint highlighter
+        # glColor3f(0, 1, 0)
+        # glPointSize(14)
+        # glBegin(GL_POINTS)
+        # glVertex3f(*sim.waypoints[sim.wp_index])
+        # glEnd()
         # Draw drone sensors (camera FOV and LiDAR rays)
         sim = self.sim
         # Camera FOV visualization
