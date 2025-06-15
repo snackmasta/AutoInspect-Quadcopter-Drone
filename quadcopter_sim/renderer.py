@@ -23,7 +23,7 @@ class Renderer:
     def __init__(self, sim):
         self.sim = sim
         self.window_width, self.window_height = 1200, 800
-        self.angle_x, self.angle_y, self.angle_z = -73, 0, 17
+        self.angle_x, self.angle_y, self.angle_z = 17, 0, 90
         self.zoom = 1.2
         # Camera interaction state
         self._dragging = False
