@@ -1,3 +1,11 @@
+# Ignore Python virtual environments
+venv/
+.venv/
+
+# Ignore Python bytecode cache
+__pycache__/
+
+# Ignore Python bytecode
 quadcopter_sim/__pycache__/drone_body_box.cpython-310.pyc
 quadcopter_sim/__pycache__/environment.cpython-310.pyc
 quadcopter_sim/__pycache__/renderer.cpython-310.pyc
