@@ -7,8 +7,4 @@ quadcopter_sim/__pycache__/thrust.cpython-310.pyc
 # Ignore Python bytecode cache
 __pycache__/
 venv/
-__pycache__/debug_config.cpython-310.pyc
-quadcopter_sim/__pycache__/lqr_controller.cpython-310.pyc
-quadcopter_sim/__pycache__/main_trajectory.cpython-310.pyc
-quadcopter_sim/__pycache__/position_controller.cpython-310.pyc
-quadcopter_sim/__pycache__/takeoff_landing.cpython-310.pyc
+*.pyc
