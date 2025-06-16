@@ -92,44 +92,27 @@ def body_box_terrain_forces(roll, pitch, yaw, center, environment, m, g, vx, vy,
     """
     Compute normal force and torque from terrain collision for the body box.
     Returns (force, torque) in world frame.
-    Includes damping, penetration tolerance, and velocity deadzone to prevent jitter.
+    Implements a hard, non-penetrable ground: forcibly corrects any penetration by projecting the drone body up to the ground surface.
     """
     corners = get_body_box_corners(roll, pitch, yaw, center, size)
-    # Filter out corners with NaN or inf values
     valid_corners = [c for c in corners if np.all(np.isfinite(c))]
     if len(valid_corners) < len(corners):
-        # If any corner is invalid, skip terrain force (return zero force/torque)
         return np.zeros(3), np.zeros(3)
     ground_heights = np.array([environment.contour_height(x, y) for x, y, _ in valid_corners])
     penetrations = ground_heights - np.array([c[2] for c in valid_corners])
-    force = np.zeros(3)
-    torque = np.zeros(3)
-    k_ground = 150  # N/m, spring constant
-    k_friction = 10.0   # friction coefficient
-    d_ground = 10.0    # Damping coefficient for normal direction
-    spring_scale = 0.5  # Scale down the spring force output
-    for i, penetration in enumerate(penetrations):
-        if penetration > penetration_tol:
-            r = corners[i] - np.array(center)
-            v_contact = np.array([vx, vy, 0]) + np.cross([wx, wy, wz], r)
-            v_n = v_contact[2]
-            # Improved deadzone for vertical velocity
-            if abs(v_n) < velocity_deadzone:
-                v_n = 0.0
-            # If penetration is significant and v_n is very small, clamp to zero to avoid jitter
-            if abs(v_n) < velocity_deadzone and penetration > 2 * penetration_tol:
-                v_n = 0.0
-            f_n = np.array([0, 0, spring_scale * (k_ground * (penetration - penetration_tol) - d_ground * v_n)])
-            # Friction force (opposes velocity at contact point)
-            v_xy = v_contact[:2]
-            if np.linalg.norm(v_xy) < velocity_deadzone:
-                v_xy = np.zeros(2)
-            f_friction = -k_friction * v_xy
-            f_friction = np.append(f_friction, 0)
-            f_total = f_n + f_friction
-            # Clamp very small forces to zero
-            if np.linalg.norm(f_total) < 1e-3:
-                f_total = np.zeros(3)
-            force += f_total
-            torque += np.cross(r, f_total)
-    return force, torque
+    max_penetration = np.max(penetrations)
+    # If any part is below ground, forcibly move the drone up
+    if max_penetration > penetration_tol:
+        # Project the center up by the maximum penetration
+        center[2] += max_penetration + penetration_tol
+        # Zero vertical velocity and angular velocity
+        vz = 0
+        wx = 0
+        wy = 0
+        wz = 0
+        # Apply only gravity support force
+        force = np.array([0, 0, m * g])
+        torque = np.zeros(3)
+        return force, torque
+    # Otherwise, no correction needed
+    return np.zeros(3), np.zeros(3)

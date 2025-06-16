@@ -401,27 +401,50 @@ class QuadcopterSimulation:
         # Compute normal force and torque from terrain collision
         force_ground, torque_ground = body_box_terrain_forces(
             roll, pitch, yaw, center, self.environment, self.mass, self.gravity, vx, vy, wx, wy, wz)
-        # Apply normal force to acceleration
-        a += force_ground / self.mass
-        # Reflect ground force directly to velocity (impulse-like effect)
+        # --- SOLID GROUND ENFORCEMENT ---
+        # After force/torque calculation, forcibly project the drone above ground if any part is below
+        corners = get_body_box_corners(roll, pitch, yaw, [x, y, z])
+        ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
+        penetrations = ground_heights - np.array([cz for _, _, cz in corners])
+        max_penetration = np.max(penetrations)
+        if max_penetration > 0:
+            z += max_penetration
+            vz = 0
+            wx = 0
+            wy = 0
+            wz = 0
+        # --- Ground collision correction (after position update) ---
+        roll, pitch, yaw = self.state[6:9]
+        center = [x, y, z]
+        # Compute normal force and torque from terrain collision
+        force_ground, torque_ground = body_box_terrain_forces(
+            roll, pitch, yaw, center, self.environment, self.mass, self.gravity, vx, vy, wx, wy, wz)
+        # Improved ground contact model
         if np.linalg.norm(force_ground) > 0:
+            # Apply normal force to acceleration
+            a += force_ground / self.mass
+            # Friction model: simple Coulomb friction for x/y
+            friction_coeff = 0.6  # typical rubber on concrete
+            normal_force = max(force_ground[2], 0)
+            friction_force = -friction_coeff * normal_force * np.sign([vx, vy, 0])
+            a[:2] += friction_force[:2] / self.mass
+            # Reflect ground force directly to velocity (impulse-like effect)
             v_force = force_ground / self.mass * dt
             vx += v_force[0]
             vy += v_force[1]
             vz += v_force[2]
-            # Additional direct damping for vertical speed when on ground
-            vz *= 0.7  # Reduce vertical speed by 30% per step when touching ground
-            # Additional direct damping for angular velocity when on ground
-            wx *= 0.5
-            wy *= 0.5
-            wz *= 0.5
+            # Stronger damping for vertical and angular velocity
+            vz *= 0.3  # more energy loss on impact
+            wx *= 0.1
+            wy *= 0.1
+            wz *= 0.1
         # Clamp velocities to prevent overflow after ground collision
-        max_vel = 50.0  # reasonable max velocity in m/s
+        max_vel = 20.0  # lower max velocity in m/s for stability
         vx = np.clip(vx, -max_vel, max_vel)
         vy = np.clip(vy, -max_vel, max_vel)
         vz = np.clip(vz, -max_vel, max_vel)
         # Clamp angular velocities to prevent overflow after ground collision
-        max_omega = 100.0  # reasonable max angular velocity in rad/s
+        max_omega = 10.0  # much lower max angular velocity in rad/s
         wx = np.clip(wx, -max_omega, max_omega)
         wy = np.clip(wy, -max_omega, max_omega)
         wz = np.clip(wz, -max_omega, max_omega)

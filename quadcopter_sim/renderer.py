@@ -99,6 +99,10 @@ class Renderer:
         imgui.text(f"Ground Speed: {np.linalg.norm(vel[:2]):.2f} m/s")
         imgui.text(f"Vertical Speed: {vel[2]:.2f} m/s")
         imgui.separator()
+        # --- ANGLE TELEMETRY ---
+        roll, pitch, yaw = np.degrees(sim.state[6:9])
+        imgui.text(f"Angle (deg): Roll={roll:.1f}, Pitch={pitch:.1f}, Yaw={yaw:.1f}")
+        imgui.separator()
         imgui.text("Camera Controls")
         _, self.angle_x = imgui.slider_float("Angle X", self.angle_x, -90.0, 90.0)
         _, self.angle_y = imgui.slider_float("Angle Y", self.angle_y, -180.0, 180.0)
