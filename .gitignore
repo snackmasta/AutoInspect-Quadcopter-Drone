@@ -3,3 +3,10 @@ quadcopter_sim/__pycache__/environment.cpython-310.pyc
 quadcopter_sim/__pycache__/renderer.cpython-310.pyc
 quadcopter_sim/__pycache__/simulation.cpython-310.pyc
 quadcopter_sim/__pycache__/thrust.cpython-310.pyc
+
+# Ignore all __pycache__ directories
+__pycache__/
+quadcopter_sim/__pycache__/
+
+# Ignore Python virtual environments
+venv/
