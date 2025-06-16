@@ -413,6 +413,9 @@ class QuadcopterSimulation:
             wx = 0
             wy = 0
             wz = 0
+            # Apply strong friction to stop sliding
+            vx *= 0.2
+            vy *= 0.2
         # --- Ground collision correction (after position update) ---
         roll, pitch, yaw = self.state[6:9]
         center = [x, y, z]
