@@ -10,10 +10,10 @@ import debug_config
 
 class QuadcopterSimulation:
     """Simulates a quadcopter with physics, control, and waypoint following."""
-    def __init__(self):
+    def __init__(self, Q=None, R=None):
         # --- Physical parameters ---
         self.g = 9.81
-        self.m = 3  # mass (kg)
+        self.m = 0.5  # mass (kg)
         self.L = 0.6  # arm length (m)
         # Use body box size for inertia calculation
         w, d, h = 0.8, 0.8, 0.2  # meters
@@ -26,7 +26,7 @@ class QuadcopterSimulation:
         self.dt = 0.002
         # --- State variables ---
         self.state = np.zeros(12)
-        self.state[2] = 0  # start on ground
+        self.state[2] = 3.0  # start at 3 meters altitude
         self.rotor_speeds = np.zeros(4)
         self.max_rpm = 12000
         self.min_rpm = 0
@@ -54,8 +54,11 @@ class QuadcopterSimulation:
         # --- Waypoints ---
         self._init_waypoints()
         self.thrust_model = Thrust(self.k_thrust, self.atmosphere_density)
-        self.use_pid = True  # Toggle for PID (True) or LQR (False) in Auto mode
-        self.target_speed = 3.0  # Default, can be changed via GUI
+        self.use_pid = True  # Use LQR for Auto mode by default
+        self.target_speed = 1.0  # Default, can be changed via GUI
+        # Store LQR Q/R for use in controller
+        self.lqr_Q = Q
+        self.lqr_R = R
 
     def set_target_speed(self, value):
         self.target_speed = value
@@ -289,7 +292,15 @@ class QuadcopterSimulation:
             u = self.position_controller(target_pos)
         else:
             lqr_target = np.hstack((target_pos, desired_vel))
-            u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m)
+            u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m, Q=self.lqr_Q, R=self.lqr_R)
+            if not hasattr(self, '_first_lqr_debug'):
+                print("[SIM DEBUG] Initial state:", self.state)
+                print("[SIM DEBUG] LQR target:", lqr_target)
+                print("[SIM DEBUG] First control output:", u)
+                print("[SIM DEBUG] Control output shape:", u.shape)
+                self._first_lqr_debug = True
+            if u.shape[0] != 6:
+                print(f"[SIM ERROR] Control output shape mismatch: expected 6, got {u.shape[0]}")
         
         # Calculate individual rotor thrusts for debug
         rotor_thrusts = self.calculate_rotor_thrusts(u)
@@ -301,16 +312,17 @@ class QuadcopterSimulation:
         else:
             self.debug_counter = 0
             
-        if self.debug_counter % 50 == 0:
-            print(f"WP: {self.wp_index}/{len(self.waypoints)-1} | "
-                  f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}] | "
-                  f"Target: [{target_pos[0]:.1f}, {target_pos[1]:.1f}, {target_pos[2]:.1f}]")
-            print(f"Control: Roll={u[0]:.2f}, Pitch={u[1]:.2f}, Thrust={u[2]:.1f}, Yaw={u[5]:.2f}")
-            print(f"Rotor Thrusts: T1={rotor_thrusts[0]:.1f}, T2={rotor_thrusts[1]:.1f}, "
-                  f"T3={rotor_thrusts[2]:.1f}, T4={rotor_thrusts[3]:.1f}")
-            print(f"Angles: Roll={np.degrees(self.state[6]):.1f}°, Pitch={np.degrees(self.state[7]):.1f}°, "
-                  f"Yaw={np.degrees(self.state[8]):.1f}°")
-            print("---")
+        # --- Remove verbose waypoint/attitude debug output for decluttered tuning ---
+        # if self.debug_counter % 50 == 0:
+        #     print(f"WP: {self.wp_index}/{len(self.waypoints)-1} | "
+        #           f"Pos: [{self.state[0]:.1f}, {self.state[1]:.1f}, {self.state[2]:.1f}] | "
+        #           f"Target: [{target_pos[0]:.1f}, {target_pos[1]:.1f}, {target_pos[2]:.1f}]")
+        #     print(f"Control: Roll={u[0]:.2f}, Pitch={u[1]:.2f}, Thrust={u[2]:.1f}, Yaw={u[5]:.2f}")
+        #     print(f"Rotor Thrusts: T1={rotor_thrusts[0]:.1f}, T2={rotor_thrusts[1]:.1f}, "
+        #           f"T3={rotor_thrusts[2]:.1f}, T4={rotor_thrusts[3]:.1f}")
+        #     print(f"Angles: Roll={np.degrees(self.state[6]):.1f}°, Pitch={np.degrees(self.state[7]):.1f}°, "
+        #           f"Yaw={np.degrees(self.state[8]):.1f}°")
+        #     print("---")
         
         self.physics_update(u, delta_time)
         self.trajectory.append(self.state[:3].copy())        # Animate blade angles for visualization
@@ -365,6 +377,10 @@ class QuadcopterSimulation:
             m=self.m,
             target_speed=self.target_speed
         )
+
+    def set_lqr_gains(self, Q, R):
+        self.lqr_Q = Q
+        self.lqr_R = R
 
     def physics_update(self, u, dt):
         # u: [tau_x, tau_y, thrust, tau_roll, tau_pitch, tau_yaw]
@@ -473,7 +489,7 @@ class QuadcopterSimulation:
 
     def reset(self):
         self.state[:] = 0
-        self.state[2] = 0
+        self.state[2] = 3.0  # start at 3 meters altitude after reset
         self.wp_index = 0
         self.trajectory.clear()
         self.prev_thrust = 0.0  # reset thrust smoothing

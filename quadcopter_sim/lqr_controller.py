@@ -28,18 +28,18 @@ def lqr_position_attitude_controller(
     B[5,2] = 1  # az
     if Q is None:
         Q = np.diag([
-            80.67158375172214,
-            22.426305037285562,
-            400.86095012274626,
-            12.340153000983255,
-            9.470822304218235,
+            80.67158375172214, 
+            22.426305037285562, 
+            400.86095012274626, 
+            12.340153000983255, 
+            9.470822304218235, 
             28.995234005420553
         ])
     if R is None:
         R = np.diag([
-            0.9239052950120759,
-            0.6740801361666535,
-            0.1514381497427214
+            0.9239052950120759, 
+            0.6740801361666535, 
+            0.08571670448048521
         ])
     K = lqr(A, B, Q, R)
     pos = state[:3]
@@ -67,12 +67,19 @@ def lqr_position_attitude_controller(
     # Thrust (compensate for tilt)
     thrust = np.clip(m * (g + az_des) / (np.cos(roll) * np.cos(pitch)), min_thrust, max_thrust)
     # Optional debug output
-    if debug:
+    if debug or np.any(np.isnan([tau_x, tau_y, thrust])) or np.any(np.isinf([tau_x, tau_y, thrust])):
         print(f"[LQR] z={state[2]:.2f}, vz={state[5]:.2f}, err_z={target_pos[2]-pos[2]:.2f}, az_des={az_des:.2f}, thrust={thrust:.2f}")
         print(f"[LQR DEBUG] Target pos: {target_pos}, Current pos: {pos}")
         print(f"[LQR DEBUG] Target vel: {target_vel}, Current vel: {vel}")
         print(f"[LQR DEBUG] Error: {err}")
         print(f"[LQR DEBUG] acc_cmd: {acc_cmd}, phi_des: {phi_des:.3f}, theta_des: {theta_des:.3f}")
+        print(f"[LQR DEBUG] tau_x: {tau_x}, tau_y: {tau_y}, thrust: {thrust}")
+    # Clamp NaN/Inf to safe values
+    if np.any(np.isnan([tau_x, tau_y, thrust])) or np.any(np.isinf([tau_x, tau_y, thrust])):
+        print("[LQR ERROR] NaN or Inf detected in control output! Clamping to zero.")
+        tau_x = 0.0
+        tau_y = 0.0
+        thrust = m * g
     # Optional: yaw control
     if yaw_control and len(target) >= 8:
         target_yaw = target[6]

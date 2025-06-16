@@ -1,15 +1,16 @@
 import numpy as np
 from quadcopter_sim.simulation import QuadcopterSimulation
+from quadcopter_sim.main_trajectory import get_main_trajectory
 from skopt import gp_minimize
 from skopt.space import Real
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-SIM_TIME = 8.0  # seconds
+SIM_TIME = 30.0  # seconds, increase to allow full trajectory
 DT = 0.02  # Match simulation step size for efficiency
-TARGET = np.array([0.0, 0.0, 3.0])  # Hover at 3m
+WAYPOINTS = get_main_trajectory()  # Use main trajectory for tuning
 
-# Define search space for Q and R diagonal elements (6 for Q, 4 for R)
+# Define search space for Q and R diagonal elements (6 for Q, 3 for R)
 space = [
     Real(5, 100, name='Qx'),
     Real(5, 100, name='Qy'),
@@ -19,24 +20,32 @@ space = [
     Real(10, 200, name='Qvz'),
     Real(0.01, 2, name='Rx'),
     Real(0.01, 2, name='Ry'),
-    Real(0.01, 1, name='Rthrust'),
-    Real(0.01, 2, name='Rz'),
+    Real(0.05, 0.3, name='Rthrust'),  # narrowed range for Rthrust
 ]
 
 def trajectory_error(sim):
     traj = np.array(sim.trajectory)
-    waypoints = np.array(sim.waypoints)
+    waypoints = np.array(WAYPOINTS)
+    velocities = np.diff(traj, axis=0) / DT
+    osc_penalty = np.mean(np.linalg.norm(velocities, axis=1))
     min_len = min(len(traj), len(waypoints))
     if min_len == 0:
         return float('inf')
-    return np.mean(np.linalg.norm(traj[:min_len] - waypoints[:min_len], axis=1))
+    return np.mean(np.linalg.norm(traj[:min_len] - waypoints[:min_len], axis=1)) + 0.5 * osc_penalty
 
 def run_simulation(Q_diag, R_diag):
     Q = np.diag(Q_diag)
     R = np.diag(R_diag)
-    sim = QuadcopterSimulation()
+    sim = QuadcopterSimulation(Q=Q, R=R)
     sim.use_pid = False
     sim.reset()
+    # Set initial state to first trajectory point after reset
+    sim.state[:3] = np.array(WAYPOINTS[0])
+    sim.state[3:6] = 0  # zero initial velocity
+    # Overwrite waypoints with main trajectory
+    sim.waypoints = [np.array(wp) for wp in WAYPOINTS]
+    # Start at the first trajectory point
+    sim.state[:3] = np.array(WAYPOINTS[0])
     steps = 0
     crashed = False
     while steps < int(SIM_TIME / DT):
@@ -58,12 +67,12 @@ def objective(params):
     return score
 
 def main():
-    print("Starting Bayesian Optimization for LQR tuning...\n")
+    print("Starting Bayesian Optimization for LQR tuning on main trajectory...\n")
     res = gp_minimize(
         objective,
         space,
-        n_calls=100,  # Reasonable for efficiency
-        n_random_starts=20,
+        n_calls=100,  # Start with 1 for quick test, increase for full tuning
+        n_random_starts=1,
         random_state=42,
         verbose=True
     )
