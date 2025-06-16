@@ -374,7 +374,6 @@ class QuadcopterSimulation:
         thrusts = self.k_thrust * self.atmosphere_density * (omega ** 2)
         Fz = np.sum(thrusts)  # Use actual thrust, not controller's request
         tau_x, tau_y, _, _, _, tau_z = u
-        tau_z = 0.0  # Remove any yaw torque
         # Rotation matrix for body to world
         cr, sr = np.cos(roll), np.sin(roll)
         cp, sp = np.cos(pitch), np.sin(pitch)
