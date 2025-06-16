@@ -271,6 +271,7 @@ class QuadcopterSimulation:
 
         # Simple LQR to follow waypoints (replace PID)
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
+            print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
             self.wp_index += 1
         target_pos = self.waypoints[self.wp_index]
         # Estimate desired velocity (finite difference to next waypoint)
@@ -472,6 +473,7 @@ class QuadcopterSimulation:
         self._debug_print(f"[PHYSICS DEBUG] Position: {[x, y, z]}, Velocity: {[vx, vy, vz]}")
 
     def reset(self):
+        print("[DEBUG] Simulation reset: state, wp_index, and trajectory cleared.")
         self.state[:] = 0
         self.state[2] = 0
         self.wp_index = 0
