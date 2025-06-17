@@ -1,9 +1,13 @@
+import sys
+import os
+# Add parent directory to path so we can import quadcopter_sim
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
 import itertools
 import concurrent.futures
 import random
 from quadcopter_sim.simulation import QuadcopterSimulation
-import sys
 import subprocess
 try:
     from skopt import Optimizer

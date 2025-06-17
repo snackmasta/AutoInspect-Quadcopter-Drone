@@ -1,6 +1,11 @@
 """
 Quadcopter PyOpenGL Simulation - Main Module
 """
+import sys
+import os
+# Add parent directory to path so we can import quadcopter_sim
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
@@ -8,6 +13,7 @@ import time
 import numpy as np
 from quadcopter_sim.simulation import QuadcopterSimulation
 from quadcopter_sim.renderer import Renderer
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'debug'))
 import debug_config
 
 def key_callback(window, key, scancode, action, mods):

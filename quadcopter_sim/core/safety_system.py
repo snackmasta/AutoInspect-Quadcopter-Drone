@@ -3,6 +3,13 @@ Safety system for quadcopter simulation.
 Handles crash detection, recovery, and emergency procedures.
 """
 import numpy as np
+import sys
+import os
+
+# Add debug directory to path to import debug_config
+debug_path = os.path.join(os.path.dirname(__file__), '..', '..', 'debug')
+if debug_path not in sys.path:
+    sys.path.append(debug_path)
 import debug_config
 
 

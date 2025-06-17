@@ -1,3 +1,8 @@
+import sys
+import os
+# Add parent directory to path so we can import quadcopter_sim
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
 import itertools
 from quadcopter_sim.simulation import QuadcopterSimulation

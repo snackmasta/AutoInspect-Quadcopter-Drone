@@ -3,11 +3,18 @@ Quadcopter simulation entry point.
 Provides a clean interface for quadcopter simulation with physics, control, and waypoint following.
 """
 import numpy as np
+import sys
+import os
 from .main_trajectory import get_main_trajectory
 from .takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from .environment import Environment
 from .core import PhysicsEngine, StateManager, FlightController, SafetySystem
 from .utils import get_rotor_positions, get_camera_image
+
+# Add debug directory to path to import debug_config
+debug_path = os.path.join(os.path.dirname(__file__), '..', 'debug')
+if debug_path not in sys.path:
+    sys.path.append(debug_path)
 import debug_config
 
 

@@ -1,6 +1,11 @@
 """
 Quadcopter Physics Debug Entry Point
 """
+import sys
+import os
+# Add parent directory to path so we can import quadcopter_sim
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 from quadcopter_sim.simulation import QuadcopterSimulation
 import numpy as np
 import time
