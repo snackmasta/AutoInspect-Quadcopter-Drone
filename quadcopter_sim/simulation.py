@@ -416,6 +416,9 @@ class QuadcopterSimulation:
             # Apply strong friction to stop sliding
             vx *= 0.2
             vy *= 0.2
+            # Snap to flat orientation
+            roll = 0
+            pitch = 0
         # --- Ground collision correction (after position update) ---
         roll, pitch, yaw = self.state[6:9]
         center = [x, y, z]
@@ -487,6 +490,17 @@ class QuadcopterSimulation:
         yaw += euler_rates[2] * dt
         # Keep yaw in [-pi, pi]
         yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
+        # --- FINAL GROUND FLATTENING ---
+        corners = get_body_box_corners(roll, pitch, yaw, [x, y, z])
+        ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
+        penetrations = ground_heights - np.array([cz for _, _, cz in corners])
+        max_penetration = np.max(penetrations)
+        if max_penetration > 0:
+            roll = 0
+            pitch = 0
+            wx = 0
+            wy = 0
+            wz = 0
         self.state = np.array([x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz])
 
         # Debug: print control input and resulting thrust vector
