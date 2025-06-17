@@ -74,6 +74,9 @@ class Renderer:
         imgui.same_line()
         if imgui.button("Land"):
             sim.land()
+        imgui.same_line()
+        if imgui.button("Hover"):
+            sim.set_manual_hover(target_altitude=sim.state[2] if sim.state[2] > 0.1 else 1.0)
         imgui.separator()
         if imgui.button("Pause"): pass
         imgui.same_line()
