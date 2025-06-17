@@ -153,8 +153,7 @@ class QuadcopterSimulation:
     def target_speed(self, value):
         """Set target speed."""
         self.flight_controller.target_speed = value
-    
-    # Configuration methods
+      # Configuration methods
     def set_target_speed(self, value):
         """Set target speed for waypoint following."""
         self.flight_controller.set_target_speed(value)
@@ -163,12 +162,20 @@ class QuadcopterSimulation:
         """Calculate RPM needed for hovering."""
         return self.flight_controller._get_hover_rpm()
     
-    def set_manual_hover(self, target_altitude=1.0):
-        """Set manual RPMs to hover at given altitude."""
-        self.state_manager.state[2] = target_altitude
+    def set_manual_hover(self, target_altitude=None):
+        """Set manual RPMs to hover at current or specified altitude."""
+        if target_altitude is not None:
+            # Only set altitude if explicitly specified
+            self.state_manager.state[2] = target_altitude
+            print(f"[DEBUG] Setting manual hover at altitude {target_altitude}m")
+        else:
+            # Preserve current altitude when toggling to manual mode
+            current_altitude = self.state_manager.state[2]
+            print(f"[DEBUG] Preserving current altitude {current_altitude:.2f}m in manual mode")
+        
         rpm_hover = self.get_hover_rpm()
         self.state_manager.manual_rpms[:] = rpm_hover
-        print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f} for altitude {target_altitude}m")
+        print(f"[Dynamic Physic] Calculated hover RPM per motor: {rpm_hover:.2f}")
     
     def step(self, delta_time):
         """

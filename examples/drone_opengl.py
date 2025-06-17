@@ -33,12 +33,19 @@ def key_callback(window, key, scancode, action, mods):
     if action not in (glfw.PRESS, glfw.REPEAT):
         if debug_config.DEBUG_ACTION_IGNORE:
             print(f"[DEBUG] Ignoring action: {action}")
-        return
-    # Toggle manual mode
+        return    # Toggle manual mode
     if key == glfw.KEY_M:
         sim.manual_mode = not sim.manual_mode
         if sim.manual_mode:
-            sim.set_manual_hover()
+            # When entering manual mode, preserve current position and set RPMs to current rotor speeds
+            sim.manual_rpms[:] = sim.rotor_speeds
+            print(f"[DEBUG] Entered manual mode - preserved position and set RPMs to current rotor speeds")
+        else:
+            # When exiting manual mode, reset manual RPMs and clean up manual state
+            sim.manual_rpms[:] = 0
+            if hasattr(sim, 'manual_yaw'):
+                delattr(sim, 'manual_yaw')
+            print(f"[DEBUG] Exited manual mode - reset manual RPMs")
         print(f"Manual mode: {sim.manual_mode}")
     # Only process manual controls if in manual mode
     if not sim.manual_mode:
