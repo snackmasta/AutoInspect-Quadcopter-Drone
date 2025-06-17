@@ -11,32 +11,8 @@ from .environment import Environment
 from .core import PhysicsEngine, StateManager, FlightController, SafetySystem
 from .utils import get_rotor_positions, get_camera_image
 
-# Try to import debug_config, create fallback if not available
-try:
-    # Add debug directory to path to import debug_config
-    debug_path = os.path.join(os.path.dirname(__file__), '..', 'debug')
-    if debug_path not in sys.path:
-        sys.path.append(debug_path)
-    import debug_config
-except ImportError:
-    # Create a fallback debug_config module
-    class DebugConfig:
-        DEBUG_KEY_EVENT = True
-        DEBUG_IMGUI_CAPTURE = True
-        DEBUG_ACTION_IGNORE = True
-        DEBUG_MANUAL_MODE_OFF = True
-        DEBUG_KEY_W = True
-        DEBUG_KEY_S = True
-        DEBUG_KEY_A = True
-        DEBUG_KEY_D = True
-        DEBUG_KEY_Q = True
-        DEBUG_KEY_E = True
-        DEBUG_KEY_R = True
-        DEBUG_KEY_F = True
-        DEBUG_MANUAL_RPMS = False
-        DEBUG_PHYSICS = False
-        DEBUG_MANUAL_STATUS = False
-    debug_config = DebugConfig()
+# Import debug configuration using centralized utility
+from .debug_utils import debug_config
 
 
 class QuadcopterSimulation:
