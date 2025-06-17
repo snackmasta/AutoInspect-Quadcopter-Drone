@@ -66,22 +66,22 @@ class Thrust:
         # Compute actual thrusts
         omega = 2 * np.pi * np.array(rotor_speeds_rpm) / 60.0
         rotor_thrusts = thrust_coefficient * atmosphere_density * np.square(omega)
-        
-        # Calculate thrust direction based on drone orientation
+          # Calculate thrust direction based on drone orientation
         if drone_orientation is not None:
             roll, pitch, yaw = drone_orientation
-            # Rotation matrix from body to world frame
+            # Rotation matrix from body to world frame (consistent with helpers.py)
             cr, sr = np.cos(roll), np.sin(roll)
             cp, sp = np.cos(pitch), np.sin(pitch)
             cy, sy = np.cos(yaw), np.sin(yaw)
             R = np.array([
                 [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
-                [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],                [-sp, cp*sr, cp*cr]
+                [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
+                [-sp, cp*sr, cp*cr]
             ])
             # Thrust direction in body frame (pointing down - direction air is pushed)
             thrust_body = np.array([0, 0, -1])
-            # Transform to world frame
-            thrust_world = R @ thrust_body
+            # Transform to world frame using transpose (consistent with rotor position calculation)
+            thrust_world = thrust_body @ R.T
         else:
             # Fallback to downward direction if no orientation provided
             thrust_world = np.array([0, 0, -1])
@@ -155,12 +155,18 @@ class Thrust:
         k_yaw = 1e-7  # drag torque coefficient
         d_roll = tau_x / (2 * L) if L > 0 else 0
         d_pitch = tau_y / (2 * L) if L > 0 else 0
-        d_yaw = 0.0  # Remove yaw differential
-        T1 = T_base + d_roll + d_pitch + d_yaw  # Front Left
-        T2 = T_base + d_roll - d_pitch - d_yaw  # Front Right
-        T3 = T_base - d_roll - d_pitch + d_yaw  # Rear Right
-        T4 = T_base - d_roll + d_pitch - d_yaw  # Rear Left
-        thrusts = np.array([T1, T2, T3, T4])
+        d_yaw = 0.0  # Remove yaw differential        # Match rotor layout from helpers.py ACTUAL positions:
+        # Index 0: Front Left (FL), Index 1: Front Right (FR)
+        # Index 2: Rear Right (RR), Index 3: Rear Left (RL)
+        # 
+        # Control convention:
+        # +d_roll: left rotors increase, right rotors decrease (positive roll = right down)
+        # +d_pitch: rear rotors increase, front rotors decrease (positive pitch = nose up)
+        T_FL = T_base + d_roll - d_pitch + d_yaw   # Front Left (Index 0)
+        T_FR = T_base - d_roll - d_pitch - d_yaw   # Front Right (Index 1)  
+        T_RR = T_base - d_roll + d_pitch + d_yaw   # Rear Right (Index 2)
+        T_RL = T_base + d_roll + d_pitch - d_yaw   # Rear Left (Index 3)
+        thrusts = np.array([T_FL, T_FR, T_RR, T_RL])
         min_val = np.min(thrusts)
         if min_val < min_thrust:
             diff = min_thrust - min_val

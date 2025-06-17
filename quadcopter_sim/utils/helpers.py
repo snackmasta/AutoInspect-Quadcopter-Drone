@@ -16,13 +16,12 @@ def get_rotor_positions(state, arm_length):
         Array of 4 rotor positions in world coordinates
     """
     x, y, z, _, _, _, roll, pitch, yaw, _, _, _ = state
-    
-    # Rotor offsets in body frame (swapped FR and RL)
+      # Rotor offsets in body frame 
     offsets = np.array([
-        [-arm_length/2, arm_length/2, 0],   # FL (0)
-        [-arm_length/2, -arm_length/2, 0],  # RL (was 3, now 1)
-        [arm_length/2, -arm_length/2, 0],   # RR (2)
-        [arm_length/2, arm_length/2, 0]     # FR (was 1, now 3)
+        [-arm_length/2, arm_length/2, 0],   # FL (0) - Front Left
+        [-arm_length/2, -arm_length/2, 0],  # FR (1) - Front Right
+        [arm_length/2, -arm_length/2, 0],   # RR (2) - Rear Right
+        [arm_length/2, arm_length/2, 0]     # RL (3) - Rear Left
     ])
     
     # Rotation matrix from body to world
