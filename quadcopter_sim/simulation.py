@@ -253,24 +253,15 @@ class QuadcopterSimulation:
             return
         # --- LANDING MODE ---
         if hasattr(self, 'is_landing') and self.is_landing:
-            target = self.landing_target
-            u = self.position_controller(target)
-            rotor_thrusts = self.calculate_rotor_thrusts(u)
-            self.rotor_speeds = rotor_thrusts
-            self.physics_update(u, delta_time)
-            self.trajectory.append(self.state[:3].copy())
-            for i in range(4):
-                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
-            # If on ground and spindown requested, set RPMs to 0 and exit landing mode
-            if self.landing_spindown and self.state[2] < 0.05 and abs(self.state[5]) < 0.2:
-                self.rotor_speeds[:] = 0
-                self.is_landing = False
+            # No auto landing logic: just exit landing mode immediately
+            self.is_landing = False
             return
 
         # Simple LQR to follow waypoints (replace PID)
-        if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
-            print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
-            self.wp_index += 1
+        if not hasattr(self, '_waypoint_paused') or not self._waypoint_paused:
+            if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
+                print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
+                self.wp_index += 1
         target_pos = self.waypoints[self.wp_index]
         # Estimate desired velocity (finite difference to next waypoint)
         if self.wp_index < len(self.waypoints) - 1:

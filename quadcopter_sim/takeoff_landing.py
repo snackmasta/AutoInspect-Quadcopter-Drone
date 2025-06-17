@@ -13,5 +13,3 @@ def land(state):
     target = np.array([current_pos[0], current_pos[1], 0.0])
     spindown = True
     return target, spindown
-
-# Note: The main simulation loop should use these targets directly and handle spindown logic.
