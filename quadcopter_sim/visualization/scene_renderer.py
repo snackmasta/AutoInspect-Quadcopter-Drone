@@ -90,8 +90,7 @@ class SceneRenderer:
             
             # Apply blade rotation around local Z
             glRotatef(sim.blade_angles[i], 0, 0, 1)
-            
-            # Draw blade
+              # Draw blade
             glColor3f(0.2, 0.2, 0.2)
             glLineWidth(4)
             glBegin(GL_LINES)
@@ -102,7 +101,7 @@ class SceneRenderer:
             glVertex3f(0, 0.06, 0)
             glEnd()
             glPopMatrix()
-    
+
     def draw_rotor_numbers(self, sim):
         """Draw rotor numbers above each rotor."""
         self._ensure_glut_init()
@@ -114,7 +113,7 @@ class SceneRenderer:
             glRasterPos3f(r[0], r[1], r[2] + 0.12)
             for c in str(i+1):
                 glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(c))
-    
+
     def draw_drone_body_box(self, sim):
         """Draw the drone body box with orientation."""
         from ..drone_body_box import draw_drone_body_box
@@ -140,10 +139,13 @@ class SceneRenderer:
             glRasterPos3f(x, y, z + 0.05)  # Slightly above the corner
             for c in str(i+1):
                 glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(c))
-    
+
     def draw_thrust_arrows(self, sim):
         """Draw thrust visualization arrows for each rotor."""
         rotors = sim.rotor_positions()
+        
+        # Get drone orientation for accurate thrust direction
+        drone_orientation = sim.state[6:9]  # [roll, pitch, yaw]
         
         Thrust.draw_thrust_arrows(
             rotors,
@@ -151,7 +153,8 @@ class SceneRenderer:
             min_rpm=0,
             max_rpm=12000,
             thrust_coefficient=self.thrust_visual.thrust_coefficient,
-            atmosphere_density=self.thrust_visual.atmosphere_density
+            atmosphere_density=self.thrust_visual.atmosphere_density,
+            drone_orientation=drone_orientation
         )
     
     def draw_camera_fov(self, sim, environment):

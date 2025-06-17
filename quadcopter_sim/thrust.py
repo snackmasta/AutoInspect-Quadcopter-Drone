@@ -43,12 +43,10 @@ class Thrust:
         :param rotor_speeds_rpm: Array of rotor speeds (RPM), shape (num_rotors,)
         :return: Total thrust (N)
         """
-        return np.sum(self.compute_thrusts(rotor_speeds_rpm))
-
-    @staticmethod
-    def draw_thrust_arrows(rotor_positions, rotor_speeds_rpm, min_rpm=0, max_rpm=12000, thrust_coefficient=1.0, atmosphere_density=1.225):
+        return np.sum(self.compute_thrusts(rotor_speeds_rpm))    @staticmethod
+    def draw_thrust_arrows(rotor_positions, rotor_speeds_rpm, min_rpm=0, max_rpm=12000, thrust_coefficient=1.0, atmosphere_density=1.225, drone_orientation=None):
         """
-        Draw arrows showing the thrust force from each rotor.
+        Draw arrows showing the thrust force from each rotor based on actual thrust direction.
         The arrow length is scaled based on the thrust corresponding to min_rpm and max_rpm (default 0-12000 RPM).
         :param rotor_positions: List/array of rotor positions (shape: [4, 3])
         :param rotor_speeds_rpm: List/array of rotor speeds (RPM) for each rotor
@@ -56,6 +54,7 @@ class Thrust:
         :param max_rpm: Maximum RPM for scaling (default 12000)
         :param thrust_coefficient: Thrust coefficient (N/(rad/s)^2)
         :param atmosphere_density: Air density (kg/m^3)
+        :param drone_orientation: [roll, pitch, yaw] in radians for proper thrust direction
         """
         if rotor_speeds_rpm is None or rotor_positions is None:
             return
@@ -67,6 +66,26 @@ class Thrust:
         # Compute actual thrusts
         omega = 2 * np.pi * np.array(rotor_speeds_rpm) / 60.0
         rotor_thrusts = thrust_coefficient * atmosphere_density * np.square(omega)
+        
+        # Calculate thrust direction based on drone orientation
+        if drone_orientation is not None:
+            roll, pitch, yaw = drone_orientation
+            # Rotation matrix from body to world frame
+            cr, sr = np.cos(roll), np.sin(roll)
+            cp, sp = np.cos(pitch), np.sin(pitch)
+            cy, sy = np.cos(yaw), np.sin(yaw)
+            R = np.array([
+                [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
+                [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],                [-sp, cp*sr, cp*cr]
+            ])
+            # Thrust direction in body frame (pointing down - direction air is pushed)
+            thrust_body = np.array([0, 0, -1])
+            # Transform to world frame
+            thrust_world = R @ thrust_body
+        else:
+            # Fallback to downward direction if no orientation provided
+            thrust_world = np.array([0, 0, -1])
+        
         glLineWidth(4)
         for i, (rotor_pos, thrust) in enumerate(zip(rotor_positions, rotor_thrusts)):
             if thrust <= 0:
@@ -78,27 +97,41 @@ class Thrust:
             intensity = max(0.0, min(intensity, 1.0))
             glColor3f(1.0, 1.0 - intensity, 0.0)  # Yellow to Red gradient
             start_pos = np.array(rotor_pos)
-            end_pos = start_pos - np.array([0, 0, arrow_length])
+            # Calculate end position based on actual thrust direction
+            end_pos = start_pos + thrust_world * arrow_length
             glBegin(GL_LINES)
             glVertex3f(*start_pos)
             glVertex3f(*end_pos)
             glEnd()
-            # Arrowhead
+            # Arrowhead - create a cone pointing in thrust direction
             arrow_tip = end_pos
             arrow_size = 0.05
+            
+            # Create arrowhead perpendicular vectors
+            if abs(thrust_world[2]) < 0.9:  # Not nearly vertical
+                perp1 = np.cross(thrust_world, np.array([0, 0, 1]))
+                perp1 = perp1 / np.linalg.norm(perp1)
+            else:  # Nearly vertical, use different reference
+                perp1 = np.cross(thrust_world, np.array([1, 0, 0]))
+                perp1 = perp1 / np.linalg.norm(perp1)
+            
+            perp2 = np.cross(thrust_world, perp1)
+            perp2 = perp2 / np.linalg.norm(perp2)
+            
+            # Create arrowhead base
+            base_center = arrow_tip - thrust_world * arrow_size
+            
             glBegin(GL_TRIANGLES)
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] + arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0], arrow_tip[1], arrow_tip[2])
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1], arrow_tip[2] + arrow_size)
-            glVertex3f(arrow_tip[0] - arrow_size, arrow_tip[1] - arrow_size, arrow_tip[2] + arrow_size)
+            # Create 4 triangular faces for the arrowhead cone
+            for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:
+                edge_point = base_center + arrow_size * (np.cos(angle) * perp1 + np.sin(angle) * perp2)
+                next_angle = angle + np.pi/2
+                next_edge = base_center + arrow_size * (np.cos(next_angle) * perp1 + np.sin(next_angle) * perp2)
+                
+                # Triangle from tip to two edge points
+                glVertex3f(*arrow_tip)
+                glVertex3f(*edge_point)
+                glVertex3f(*next_edge)
             glEnd()
     @staticmethod
     def calculate_rotor_thrusts(u, L, min_thrust=1e-3):
