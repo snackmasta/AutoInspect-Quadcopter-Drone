@@ -365,6 +365,34 @@ class Renderer:
         except Exception as e:
             pass  # If import fails, skip lookahead marker
 
+        # --- BOX CORNER TO TERRAIN TELEMETRY ---
+        from .drone_body_box import get_body_box_corners
+        # Get orientation in radians for get_body_box_corners
+        roll_rad, pitch_rad, yaw_rad = sim.state[6:9]
+        center = sim.state[:3]
+        size = (0.8, 0.8, 0.2)  # Default size, or get from sim if variable
+        corners = get_body_box_corners(roll_rad, pitch_rad, yaw_rad, center, size)
+        distances = []
+        for i, (x, y, z) in enumerate(corners):
+            terrain_z = self.environment.contour_height(x, y)
+            dist = z - terrain_z
+            distances.append(dist)
+        imgui.separator()
+        imgui.text("Box Corner Distances to Terrain (m):")
+        for i, dist in enumerate(distances):
+            imgui.text(f"Corner {i+1}: {dist:.3f} m")
+        min_dist = min(distances)
+        imgui.text(f"Closest Corner to Terrain: {min_dist:.3f} m")
+        imgui.separator()
+        # --- BOX CORNER NUMBER INDICATORS ---
+        from OpenGL.GLUT import glutInit, glutBitmapCharacter, GLUT_BITMAP_HELVETICA_12
+        glutInit()
+        glColor3f(0, 0, 0)
+        for i, (x, y, z) in enumerate(corners):
+            glRasterPos3f(x, y, z + 0.05)  # Slightly above the corner
+            for c in str(i+1):
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(c))
+
     def is_chunk_overlapping(self, pos1, pos2, fov=60, altitude=None):
         """Return True if two camera chunks overlap based on their positions and FOV coverage."""
         if altitude is None:
