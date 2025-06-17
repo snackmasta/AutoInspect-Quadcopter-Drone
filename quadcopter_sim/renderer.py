@@ -76,7 +76,10 @@ class Renderer:
             sim.land()
         imgui.same_line()
         if imgui.button("Hover"):
-            sim.set_manual_hover(target_altitude=sim.state[2] if sim.state[2] > 0.1 else 1.0)
+            sim.hover()  # Pause waypoint progression to hover
+        imgui.same_line()
+        if imgui.button("Resume WP"):
+            sim.resume_waypoint_progression()  # Resume waypoint progression
         imgui.separator()
         if imgui.button("Pause"): pass
         imgui.same_line()
