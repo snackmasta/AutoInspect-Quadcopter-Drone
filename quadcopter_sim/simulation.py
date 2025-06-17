@@ -241,7 +241,7 @@ class QuadcopterSimulation:
             target = self.takeoff_target
             u = self.position_controller(target)
             rotor_thrusts = self.calculate_rotor_thrusts(u)
-            self.rotor_thrusts = rotor_thrusts
+            self.rotor_speeds = rotor_thrusts
             self.physics_update(u, delta_time)
             self.trajectory.append(self.state[:3].copy())
             # Animate blade angles
@@ -256,7 +256,7 @@ class QuadcopterSimulation:
             target = self.landing_target
             u = self.position_controller(target)
             rotor_thrusts = self.calculate_rotor_thrusts(u)
-            self.rotor_thrusts = rotor_thrusts
+            self.rotor_speeds = rotor_thrusts
             self.physics_update(u, delta_time)
             self.trajectory.append(self.state[:3].copy())
             for i in range(4):
@@ -407,8 +407,47 @@ class QuadcopterSimulation:
         ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
         penetrations = ground_heights - np.array([cz for _, _, cz in corners])
         max_penetration = np.max(penetrations)
+        ground_flattened = False
+        flatten_roll = roll
+        flatten_pitch = pitch
         if max_penetration > 0:
-            z += max_penetration
+            # Find the minimum ground height under the corners
+            min_ground = np.min(ground_heights)
+            # Find the minimum z of the corners
+            min_corner_z = np.min([cz for _, _, cz in corners])
+            # Adjust z so the lowest corner matches the lowest ground height
+            z += min_ground - min_corner_z
+            # Now, solve for pitch and roll that flattens the drone to the ground plane
+            # We'll use least squares to fit the plane defined by the ground heights to the box corners
+            # and set pitch/roll accordingly
+            # Get local box corner positions
+            w, d, h = 0.8, 0.8, 0.2
+            local_corners = np.array([
+                [-w/2, -d/2, -h/2],
+                [ w/2, -d/2, -h/2],
+                [ w/2,  d/2, -h/2],
+                [-w/2,  d/2, -h/2],
+                [-w/2, -d/2,  h/2],
+                [ w/2, -d/2,  h/2],
+                [ w/2,  d/2,  h/2],
+                [-w/2,  d/2,  h/2],
+            ])
+            # Only use the bottom four corners for ground contact
+            bottom_indices = [0, 1, 2, 3]
+            bottom_local = local_corners[bottom_indices, :2]  # x, y
+            bottom_ground = ground_heights[bottom_indices]
+            # Fit a plane z = ax + by + c to the ground heights under the corners
+            A = np.c_[bottom_local, np.ones(4)]
+            coeffs, _, _, _ = np.linalg.lstsq(A, bottom_ground, rcond=None)
+            a, b, c = coeffs
+            # Set pitch and roll so the bottom face matches the ground plane
+            # For small angles: pitch ≈ -a, roll ≈ b
+            pitch = -np.arctan(a)
+            roll = np.arctan(b)
+            flatten_roll = roll
+            flatten_pitch = pitch
+            ground_flattened = True
+            # Zero angular and vertical velocities
             vz = 0
             wx = 0
             wy = 0
@@ -416,9 +455,6 @@ class QuadcopterSimulation:
             # Apply strong friction to stop sliding
             vx *= 0.2
             vy *= 0.2
-            # Snap to flat orientation
-            roll = 0
-            pitch = 0
         # --- Ground collision correction (after position update) ---
         roll, pitch, yaw = self.state[6:9]
         center = [x, y, z]
@@ -490,17 +526,10 @@ class QuadcopterSimulation:
         yaw += euler_rates[2] * dt
         # Keep yaw in [-pi, pi]
         yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
-        # --- FINAL GROUND FLATTENING ---
-        corners = get_body_box_corners(roll, pitch, yaw, [x, y, z])
-        ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
-        penetrations = ground_heights - np.array([cz for _, _, cz in corners])
-        max_penetration = np.max(penetrations)
-        if max_penetration > 0:
-            roll = 0
-            pitch = 0
-            wx = 0
-            wy = 0
-            wz = 0
+        # --- FINAL GROUND FLATTENING ENFORCEMENT ---
+        if ground_flattened:
+            roll = flatten_roll
+            pitch = flatten_pitch
         self.state = np.array([x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz])
 
         # Debug: print control input and resulting thrust vector
