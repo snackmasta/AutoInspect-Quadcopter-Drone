@@ -12,14 +12,14 @@ class QuadcopterSimulation:
     """Simulates a quadcopter with physics, control, and waypoint following."""
     def __init__(self):
         # --- Physical parameters ---
-        self.g = 9.81
-        self.m = 3  # mass (kg)
-        self.L = 0.6  # arm length (m)
+        self.gravity = 9.81
+        self.mass = 3  # mass (kg)
+        self.arm_length = 0.6  # arm length (m)
         # Use body box size for inertia calculation
         w, d, h = 0.8, 0.8, 0.2  # meters
-        Ixx = (1/12) * self.m * (h**2 + d**2)
-        Iyy = (1/12) * self.m * (h**2 + w**2)
-        Izz = (1/12) * self.m * (w**2 + d**2)
+        Ixx = (1/12) * self.mass * (h**2 + d**2)
+        Iyy = (1/12) * self.mass * (h**2 + w**2)
+        Izz = (1/12) * self.mass * (w**2 + d**2)
         self.I = np.diag([Ixx, Iyy, Izz])  # inertia matrix (kg*m^2)
         self.invI = np.linalg.inv(self.I)
         self.atmosphere_density = 1.225  # kg/m^3, default sea level
@@ -43,7 +43,7 @@ class QuadcopterSimulation:
         # --- Thrust coefficients ---
         desired_hover_rpm = 6000
         omega_hover = 2 * np.pi * desired_hover_rpm / 60.0
-        hover_thrust_per_motor = (self.m * self.g) / 4
+        hover_thrust_per_motor = (self.mass * self.gravity) / 4
         self.k_thrust = hover_thrust_per_motor / (self.atmosphere_density * omega_hover ** 2)
         self.prev_thrust = 0.0
         self.thrust_alpha = 1
@@ -55,7 +55,7 @@ class QuadcopterSimulation:
         self._init_waypoints()
         self.thrust_model = Thrust(self.k_thrust, self.atmosphere_density)
         self.use_pid = True  # Toggle for PID (True) or LQR (False) in Auto mode
-        self.target_speed = 3.0  # Default, can be changed via GUI
+        self.target_speed = 1.0  # Default, can be changed via GUI
 
     def set_target_speed(self, value):
         self.target_speed = value
@@ -93,18 +93,14 @@ class QuadcopterSimulation:
 
     def get_hover_rpm(self):
         """Calculate the RPM needed for each rotor to hover, based on physical parameters and atmosphere density."""
-        hover_thrust = self.m * self.g
+        hover_thrust = self.mass * self.gravity
         thrust_per_motor = hover_thrust / 4
-        # T = k_thrust * density * (omega^2), omega in rad/s
-        # omega_hover = sqrt(T / (k_thrust * density))
         omega_hover = np.sqrt(thrust_per_motor / (self.k_thrust * self.atmosphere_density))
         rpm_hover = omega_hover * 60.0 / (2 * np.pi)
         return rpm_hover
 
     def set_manual_hover(self, target_altitude=1.0):
         """Set manual RPMs to hover at a given altitude (default 1.0m)."""
-        # Adjust mass to simulate hover at different altitudes if needed
-        # For now, just set z to target_altitude
         self.state[2] = target_altitude
         rpm_hover = self.get_hover_rpm()
         self.manual_rpms[:] = rpm_hover
@@ -152,6 +148,13 @@ class QuadcopterSimulation:
                 self.recovery_mode = False
                 print("[RECOVERY] Recovery complete. Drone stabilized.")
 
+    def _update_blade_angles(self, delta_time, speeds=None):
+        if speeds is None:
+            speeds = self.rotor_speeds
+        for i in range(4):
+            direction = -1 if i in [0, 3] else 1
+            self.blade_angles[i] = (self.blade_angles[i] + direction * 360.0 * delta_time * speeds[i] / 60.0) % 360
+
     def step(self, delta_time):
         if hasattr(self, 'crashed') and self.crashed:
             # If crashed, do not update physics or control
@@ -184,15 +187,9 @@ class QuadcopterSimulation:
             if hasattr(self, 'manual_yaw'):
                 # Set the yaw state directly to manual_yaw
                 self.state[8] = self.manual_yaw
-            # For visualization, update blade angles
-            for i in range(4):
-                # Flip the spinning direction for rotor 1 and 4 (index 0 and 3)
-                direction = -1 if i in [0, 3] else 1
-                self.blade_angles[i] = (self.blade_angles[i] + direction * 360.0 * delta_time * self.rotor_speeds[i] / 60.0) % 360
-            # Use thrust module for thrust calculation
             thrusts = self.thrust_model.compute_thrusts(self.rotor_speeds)
             total_thrust = np.sum(thrusts)
-            hover_thrust = self.m * self.g
+            hover_thrust = self.mass * self.gravity
             if debug_config.DEBUG_MANUAL_STATUS:
                 print(f"[MANUAL] Total thrust: {total_thrust:.2f} N, Hover thrust: {hover_thrust:.2f} N, Delta: {total_thrust - hover_thrust:.2f} N")
                 if abs(total_thrust - hover_thrust) < 1e-2:
@@ -207,7 +204,7 @@ class QuadcopterSimulation:
             # Torque calculation (X: roll, Y: pitch, Z: yaw)
             # Rotor order: [FL, FR, RR, RL] (assuming + configuration)
             # Roll: (right - left), Pitch: (front - rear), Yaw: (CW - CCW)
-            L = self.L / 2
+            L = self.arm_length / 2
             # Original: tau_x = L * (thrusts[1] + thrusts[2] - thrusts[0] - thrusts[3])  # roll
             # Corrected for positive roll = right side down: (Left Thrust Sum - Right Thrust Sum)
             tau_x = L * (thrusts[0] + thrusts[3] - thrusts[1] - thrusts[2])  # roll
@@ -236,6 +233,7 @@ class QuadcopterSimulation:
             
             self.physics_update(u, delta_time)
             self.trajectory.append(self.state[:3].copy())
+            self._update_blade_angles(delta_time)
             return
 
         # --- TAKEOFF MODE ---
@@ -271,6 +269,7 @@ class QuadcopterSimulation:
 
         # Simple LQR to follow waypoints (replace PID)
         if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
+            print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
             self.wp_index += 1
         target_pos = self.waypoints[self.wp_index]
         # Estimate desired velocity (finite difference to next waypoint)
@@ -289,7 +288,7 @@ class QuadcopterSimulation:
             u = self.position_controller(target_pos)
         else:
             lqr_target = np.hstack((target_pos, desired_vel))
-            u = lqr_position_attitude_controller(self.state, lqr_target, g=self.g, m=self.m)
+            u = lqr_position_attitude_controller(self.state, lqr_target, g=self.gravity, m=self.mass)
         
         # Calculate individual rotor thrusts for debug
         rotor_thrusts = self.calculate_rotor_thrusts(u)
@@ -342,7 +341,7 @@ class QuadcopterSimulation:
             total_thrust_hover = thrust_hover * 4
             print(f"[DEBUG] Max RPM: {max_rpm}, Hover RPM: {hover_rpm:.2f}")
             print(f"[DEBUG] Thrust per motor at max RPM: {thrust_max:.2f} N, at hover: {thrust_hover:.2f} N")
-            print(f"[DEBUG] Total thrust at max RPM: {total_thrust_max:.2f} N, at hover: {total_thrust_hover:.2f} N, Weight: {self.m * self.g:.2f} N")
+            print(f"[DEBUG] Total thrust at max RPM: {total_thrust_max:.2f} N, at hover: {total_thrust_hover:.2f} N, Weight: {self.mass * self.gravity:.2f} N")
         
         # At the end of the step, check for crash/low altitude
         self.check_crash_or_low_altitude()
@@ -361,8 +360,8 @@ class QuadcopterSimulation:
             wp_index=getattr(self, 'wp_index', None),
             waypoints=getattr(self, 'waypoints', None),
             yaw_control_enabled=getattr(self, 'yaw_control_enabled', True),
-            g=self.g,
-            m=self.m,
+            g=self.gravity,
+            mass=self.mass,
             target_speed=self.target_speed
         )
 
@@ -375,7 +374,6 @@ class QuadcopterSimulation:
         thrusts = self.k_thrust * self.atmosphere_density * (omega ** 2)
         Fz = np.sum(thrusts)  # Use actual thrust, not controller's request
         tau_x, tau_y, _, _, _, tau_z = u
-        tau_z = 0.0  # Remove any yaw torque
         # Rotation matrix for body to world
         cr, sr = np.cos(roll), np.sin(roll)
         cp, sp = np.cos(pitch), np.sin(pitch)
@@ -389,7 +387,7 @@ class QuadcopterSimulation:
         thrust_body = np.array([0, 0, Fz])
         thrust_world = R @ thrust_body
         # Linear acceleration
-        a = thrust_world / self.m - np.array([0, 0, self.g])
+        a = thrust_world / self.mass - np.array([0, 0, self.gravity])
         # Update velocities and positions
         vx += a[0] * dt
         vy += a[1] * dt
@@ -402,28 +400,57 @@ class QuadcopterSimulation:
         center = [x, y, z]
         # Compute normal force and torque from terrain collision
         force_ground, torque_ground = body_box_terrain_forces(
-            roll, pitch, yaw, center, self.environment, self.m, self.g, vx, vy, wx, wy, wz)
-        # Apply normal force to acceleration
-        a += force_ground / self.m
-        # Reflect ground force directly to velocity (impulse-like effect)
+            roll, pitch, yaw, center, self.environment, self.mass, self.gravity, vx, vy, wx, wy, wz)
+        # --- SOLID GROUND ENFORCEMENT ---
+        # After force/torque calculation, forcibly project the drone above ground if any part is below
+        corners = get_body_box_corners(roll, pitch, yaw, [x, y, z])
+        ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
+        penetrations = ground_heights - np.array([cz for _, _, cz in corners])
+        max_penetration = np.max(penetrations)
+        if max_penetration > 0:
+            z += max_penetration
+            vz = 0
+            wx = 0
+            wy = 0
+            wz = 0
+            # Apply strong friction to stop sliding
+            vx *= 0.2
+            vy *= 0.2
+            # Snap to flat orientation
+            roll = 0
+            pitch = 0
+        # --- Ground collision correction (after position update) ---
+        roll, pitch, yaw = self.state[6:9]
+        center = [x, y, z]
+        # Compute normal force and torque from terrain collision
+        force_ground, torque_ground = body_box_terrain_forces(
+            roll, pitch, yaw, center, self.environment, self.mass, self.gravity, vx, vy, wx, wy, wz)
+        # Improved ground contact model
         if np.linalg.norm(force_ground) > 0:
-            v_force = force_ground / self.m * dt
+            # Apply normal force to acceleration
+            a += force_ground / self.mass
+            # Friction model: simple Coulomb friction for x/y
+            friction_coeff = 0.6  # typical rubber on concrete
+            normal_force = max(force_ground[2], 0)
+            friction_force = -friction_coeff * normal_force * np.sign([vx, vy, 0])
+            a[:2] += friction_force[:2] / self.mass
+            # Reflect ground force directly to velocity (impulse-like effect)
+            v_force = force_ground / self.mass * dt
             vx += v_force[0]
             vy += v_force[1]
             vz += v_force[2]
-            # Additional direct damping for vertical speed when on ground
-            vz *= 0.7  # Reduce vertical speed by 30% per step when touching ground
-            # Additional direct damping for angular velocity when on ground
-            wx *= 0.5
-            wy *= 0.5
-            wz *= 0.5
+            # Stronger damping for vertical and angular velocity
+            vz *= 0.3  # more energy loss on impact
+            wx *= 0.1
+            wy *= 0.1
+            wz *= 0.1
         # Clamp velocities to prevent overflow after ground collision
-        max_vel = 50.0  # reasonable max velocity in m/s
+        max_vel = 20.0  # lower max velocity in m/s for stability
         vx = np.clip(vx, -max_vel, max_vel)
         vy = np.clip(vy, -max_vel, max_vel)
         vz = np.clip(vz, -max_vel, max_vel)
         # Clamp angular velocities to prevent overflow after ground collision
-        max_omega = 100.0  # reasonable max angular velocity in rad/s
+        max_omega = 10.0  # much lower max angular velocity in rad/s
         wx = np.clip(wx, -max_omega, max_omega)
         wy = np.clip(wy, -max_omega, max_omega)
         wz = np.clip(wz, -max_omega, max_omega)
@@ -463,6 +490,17 @@ class QuadcopterSimulation:
         yaw += euler_rates[2] * dt
         # Keep yaw in [-pi, pi]
         yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
+        # --- FINAL GROUND FLATTENING ---
+        corners = get_body_box_corners(roll, pitch, yaw, [x, y, z])
+        ground_heights = np.array([self.environment.contour_height(cx, cy) for cx, cy, _ in corners])
+        penetrations = ground_heights - np.array([cz for _, _, cz in corners])
+        max_penetration = np.max(penetrations)
+        if max_penetration > 0:
+            roll = 0
+            pitch = 0
+            wx = 0
+            wy = 0
+            wz = 0
         self.state = np.array([x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz])
 
         # Debug: print control input and resulting thrust vector
@@ -472,6 +510,7 @@ class QuadcopterSimulation:
         self._debug_print(f"[PHYSICS DEBUG] Position: {[x, y, z]}, Velocity: {[vx, vy, vz]}")
 
     def reset(self):
+        print("[DEBUG] Simulation reset: state, wp_index, and trajectory cleared.")
         self.state[:] = 0
         self.state[2] = 0
         self.wp_index = 0
@@ -491,10 +530,10 @@ class QuadcopterSimulation:
         # Original: [FL, FR, RR, RL] = [0, 1, 2, 3]
         # Swap FR (1) and RL (3):
         offsets = np.array([
-            [-self.L/2, self.L/2, 0],   # FL (0)
-            [-self.L/2, -self.L/2, 0],  # RL (was 3, now 1)
-            [self.L/2, -self.L/2, 0],   # RR (2)
-            [self.L/2, self.L/2, 0]     # FR (was 1, now 3)
+            [-self.arm_length/2, self.arm_length/2, 0],   # FL (0)
+            [-self.arm_length/2, -self.arm_length/2, 0],  # RL (was 3, now 1)
+            [self.arm_length/2, -self.arm_length/2, 0],   # RR (2)
+            [self.arm_length/2, self.arm_length/2, 0]     # FR (was 1, now 3)
         ])
         # Rotation matrix from body to world
         cr, sr = np.cos(roll), np.sin(roll)
@@ -538,13 +577,13 @@ class QuadcopterSimulation:
         T4 (RL) --- T3 (RR)
         """
         tau_x, tau_y, total_thrust, _, _, tau_z = u
-        L = self.L / 2  # half arm length
+        L = self.arm_length / 2  # half arm length
         T_base = total_thrust / 4.0
         k_yaw = 1e-7  # drag torque coefficient
         d_roll = tau_x / (2 * L) if L > 0 else 0
         d_pitch = tau_y / (2 * L) if L > 0 else 0
         d_yaw = 0.0  # Remove yaw differential
-        thrusts = Thrust.calculate_rotor_thrusts(u, self.L)
+        thrusts = Thrust.calculate_rotor_thrusts(u, self.arm_length)
         return thrusts
 
     def takeoff(self, target_altitude=3.0):
