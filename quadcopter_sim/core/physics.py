@@ -7,11 +7,8 @@ import sys
 import os
 from ..drone_body_box import get_body_box_corners, body_box_terrain_forces
 
-# Add debug directory to path to import debug_config
-debug_path = os.path.join(os.path.dirname(__file__), '..', '..', 'debug')
-if debug_path not in sys.path:
-    sys.path.append(debug_path)
-import debug_config
+# Import debug configuration using centralized utility
+from ..debug_utils import debug_config
 
 
 class PhysicsEngine:

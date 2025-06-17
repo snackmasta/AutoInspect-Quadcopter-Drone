@@ -11,11 +11,8 @@ from .environment import Environment
 from .core import PhysicsEngine, StateManager, FlightController, SafetySystem
 from .utils import get_rotor_positions, get_camera_image
 
-# Add debug directory to path to import debug_config
-debug_path = os.path.join(os.path.dirname(__file__), '..', 'debug')
-if debug_path not in sys.path:
-    sys.path.append(debug_path)
-import debug_config
+# Import debug configuration using centralized utility
+from .debug_utils import debug_config
 
 
 class QuadcopterSimulation:

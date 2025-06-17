@@ -9,11 +9,8 @@ from ..controllers import lqr_position_attitude_controller, position_controller
 from ..takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from ..thrust import Thrust
 
-# Add debug directory to path to import debug_config
-debug_path = os.path.join(os.path.dirname(__file__), '..', '..', 'debug')
-if debug_path not in sys.path:
-    sys.path.append(debug_path)
-import debug_config
+# Import debug configuration using centralized utility
+from ..debug_utils import debug_config
 
 
 class FlightController:
