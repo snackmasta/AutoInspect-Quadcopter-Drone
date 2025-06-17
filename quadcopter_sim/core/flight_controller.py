@@ -3,8 +3,7 @@ Flight control system for quadcopter simulation.
 Handles different flight modes and control logic.
 """
 import numpy as np
-from ..lqr_controller import lqr_position_attitude_controller
-from ..position_controller import position_controller
+from ..controllers import lqr_position_attitude_controller, position_controller
 from ..takeoff_landing import takeoff as takeoff_fn, land as land_fn
 from ..thrust import Thrust
 import debug_config

@@ -3,7 +3,7 @@ import itertools
 from quadcopter_sim.simulation import QuadcopterSimulation
 
 def set_pid_gains(kp_pos, kd_pos, kp_att, kd_att, kp_yaw, kd_yaw):
-    import quadcopter_sim.position_controller as pc
+    import quadcopter_sim.controllers.position_controller as pc
     pc.KP_POS = kp_pos
     pc.KD_POS = kd_pos
     pc.KP_ATT = kp_att
