@@ -30,7 +30,7 @@ class FlightController:
         self.min_rpm = min_rpm
         
         # Control parameters
-        self.use_pid = True  # Toggle for PID (True) or LQR (False)
+        self.use_pid = False  # Toggle for PID (True) or LQR (False)
         self.target_speed = 1.0
         self.yaw_control_enabled = True
           # Thrust model
@@ -148,28 +148,42 @@ class FlightController:
         if state_manager._waypoint_paused:
             target_pos = state_manager._hover_target if state_manager._hover_target is not None else state_manager.state[:3].copy()
         else:
-            target_pos = waypoints[state_manager.wp_index]
-        
-        # Estimate desired velocity
+            target_pos = waypoints[state_manager.wp_index]        # Estimate desired velocity
         if (state_manager.wp_index < len(waypoints) - 1 and 
             (not state_manager._waypoint_paused)):
             next_pos = waypoints[state_manager.wp_index + 1]
-            desired_vel = (next_pos - target_pos) / 0.002  # Using small dt
-            max_speed = 2.0
+            desired_vel = (next_pos - target_pos) / 2.0  # Assume 2 seconds to next waypoint
+            max_speed = 3.0  # Increased max speed
             speed = np.linalg.norm(desired_vel)
             if speed > max_speed:
                 desired_vel = desired_vel * (max_speed / speed)
         else:
             desired_vel = np.zeros(3)
-        
+            
         # Choose control method
         if self.use_pid:
             u = self._position_controller(state_manager, target_pos, 
                                         force_target_override=state_manager._waypoint_paused)
         else:
+            # LQR controller - pass position and velocity target
             lqr_target = np.hstack((target_pos, desired_vel))
-            u = lqr_position_attitude_controller(state_manager.state, lqr_target, 
-                                               g=self.gravity, m=self.mass)
+            
+            # Debug: print what we're sending to LQR
+            if state_manager.debug_counter % 60 == 0:
+                print(f"[FLIGHT CTRL] Sending to LQR - Target pos: {target_pos}, Target vel: {desired_vel}")
+                print(f"[FLIGHT CTRL] Current waypoint index: {state_manager.wp_index}/{len(waypoints)-1}")
+                if hasattr(state_manager, '_waypoint_paused'):
+                    print(f"[FLIGHT CTRL] Waypoint paused: {state_manager._waypoint_paused}")
+            
+            u = lqr_position_attitude_controller(
+                state_manager.state, 
+                lqr_target, 
+                g=self.gravity, 
+                m=self.mass,
+                max_thrust=60.0,
+                max_tau=2.0,
+                yaw_control=self.yaw_control_enabled
+            )
         
         # Calculate rotor thrusts
         rotor_thrusts = self._calculate_rotor_thrusts(u)
@@ -267,3 +281,31 @@ class FlightController:
     def set_pid_mode(self, use_pid):
         """Toggle between PID and LQR control."""
         self.use_pid = use_pid
+    
+    def test_lqr_controller(self, state_manager):
+        """Test the LQR controller with a simple hover target."""
+        print("Testing LQR Controller...")
+        
+        # Simple hover test
+        hover_target = np.array([0, 0, 5, 0, 0, 0])  # hover at 5m altitude
+        
+        try:
+            u = lqr_position_attitude_controller(
+                state_manager.state,
+                hover_target,
+                g=self.gravity,
+                m=self.mass,
+                max_thrust=60.0,
+                max_tau=2.0,
+                yaw_control=True
+            )
+            
+            print(f"LQR Test Successful!")
+            print(f"Current state: {state_manager.state[:6]}")
+            print(f"Target: {hover_target}")
+            print(f"Control output: {u}")
+            return True
+            
+        except Exception as e:
+            print(f"LQR Test Failed: {e}")
+            return False
