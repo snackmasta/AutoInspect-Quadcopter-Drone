@@ -411,12 +411,12 @@ class QuadcopterSimulation:
         flatten_roll = roll
         flatten_pitch = pitch
         if max_penetration > 0:
-            # Find the average ground height under the corners
-            avg_ground = np.mean(ground_heights)
-            # Find the average z of the corners
-            avg_corner_z = np.mean([cz for _, _, cz in corners])
-            # Adjust z so the average of the corners matches the average ground height
-            z += avg_ground - avg_corner_z
+            # Find the minimum ground height under the corners
+            min_ground = np.min(ground_heights)
+            # Find the minimum z of the corners
+            min_corner_z = np.min([cz for _, _, cz in corners])
+            # Adjust z so the lowest corner matches the lowest ground height
+            z += min_ground - min_corner_z
             # Now, solve for pitch and roll that flattens the drone to the ground plane
             # We'll use least squares to fit the plane defined by the ground heights to the box corners
             # and set pitch/roll accordingly
