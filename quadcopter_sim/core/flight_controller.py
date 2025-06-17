@@ -33,8 +33,7 @@ class FlightController:
         self.use_pid = True  # Toggle for PID (True) or LQR (False)
         self.target_speed = 1.0
         self.yaw_control_enabled = True
-        
-        # Thrust model
+          # Thrust model
         self.thrust_model = Thrust(k_thrust, atmosphere_density)
     
     def compute_control(self, state_manager, waypoints, environment, delta_time):
@@ -47,9 +46,9 @@ class FlightController:
         """
         state = state_manager.state
         
-        # Check for crash or recovery mode
-        if state_manager.crashed:
-            return np.zeros(6), np.zeros(4)
+        # Check for recovery mode (still allow control when crashed)
+        # if state_manager.crashed:
+        #     return np.zeros(6), np.zeros(4)
         
         if state_manager.recovery_mode:
             return self._recovery_control(state_manager)
