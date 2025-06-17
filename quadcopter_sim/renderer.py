@@ -117,14 +117,16 @@ class Renderer:
         # Manual control toggle and sliders
         changed, new_manual_mode = imgui.checkbox("Manual Mode", self.sim.manual_mode)
         if changed:
-            # When changing mode, keep the last state of the drone
             if new_manual_mode:
                 # Switching to manual: set manual_rpms to current rotor_speeds
                 self.sim.manual_rpms[:] = self.sim.rotor_speeds
+                self.sim.manual_mode = True
             else:
-                # Switching to auto: nothing to do, auto mode uses state as is
-                pass
-            self.sim.manual_mode = new_manual_mode
+                # Switching to auto: reset manual_rpms and manual-specific state
+                self.sim.manual_mode = False
+                self.sim.manual_rpms[:] = 0
+                if hasattr(self.sim, 'manual_yaw'):
+                    del self.sim.manual_yaw
         if self.sim.manual_mode:
             imgui.text("Manual Propeller RPM Control")
             for i in range(4):
