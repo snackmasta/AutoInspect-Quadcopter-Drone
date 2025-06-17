@@ -253,27 +253,21 @@ class QuadcopterSimulation:
             return
         # --- LANDING MODE ---
         if hasattr(self, 'is_landing') and self.is_landing:
-            target = self.landing_target
-            u = self.position_controller(target)
-            rotor_thrusts = self.calculate_rotor_thrusts(u)
-            self.rotor_speeds = rotor_thrusts
-            self.physics_update(u, delta_time)
-            self.trajectory.append(self.state[:3].copy())
-            for i in range(4):
-                self.blade_angles[i] = (self.blade_angles[i] + 360.0 * delta_time * 20) % 360
-            # If on ground and spindown requested, set RPMs to 0 and exit landing mode
-            if self.landing_spindown and self.state[2] < 0.05 and abs(self.state[5]) < 0.2:
-                self.rotor_speeds[:] = 0
-                self.is_landing = False
+            # No auto landing logic: just exit landing mode immediately
+            self.is_landing = False
             return
 
         # Simple LQR to follow waypoints (replace PID)
-        if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
-            print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
-            self.wp_index += 1
-        target_pos = self.waypoints[self.wp_index]
+        if not hasattr(self, '_waypoint_paused') or not self._waypoint_paused:
+            if self.wp_index < len(self.waypoints) - 1 and np.linalg.norm(self.state[:3] - self.waypoints[self.wp_index]) < 0.7:
+                print(f"[DEBUG] Advancing to next waypoint: {self.wp_index+1}/{len(self.waypoints)} (pos: {self.state[:3]}, target: {self.waypoints[self.wp_index]})")
+                self.wp_index += 1
+            target_pos = self.waypoints[self.wp_index]
+        else:
+            # While hovering, freeze the target at the current position
+            target_pos = self._hover_target if hasattr(self, '_hover_target') else self.state[:3].copy()
         # Estimate desired velocity (finite difference to next waypoint)
-        if self.wp_index < len(self.waypoints) - 1:
+        if self.wp_index < len(self.waypoints) - 1 and (not hasattr(self, '_waypoint_paused') or not self._waypoint_paused):
             next_pos = self.waypoints[self.wp_index + 1]
             desired_vel = (next_pos - target_pos) / max(delta_time, 1e-2)
             # Limit velocity for smoothness
@@ -285,7 +279,7 @@ class QuadcopterSimulation:
             desired_vel = np.zeros(3)
         # Toggle between PID and LQR for Auto mode
         if self.use_pid:
-            u = self.position_controller(target_pos)
+            u = self.position_controller(target_pos, force_target_override=hasattr(self, '_waypoint_paused') and self._waypoint_paused)
         else:
             lqr_target = np.hstack((target_pos, desired_vel))
             u = lqr_position_attitude_controller(self.state, lqr_target, g=self.gravity, m=self.mass)
@@ -352,7 +346,7 @@ class QuadcopterSimulation:
             self.rotor_speeds[:] = self.max_rpm
             return
 
-    def position_controller(self, target):
+    def position_controller(self, target, force_target_override=False):
         return position_controller(
             self.state,
             target,
@@ -362,7 +356,8 @@ class QuadcopterSimulation:
             yaw_control_enabled=getattr(self, 'yaw_control_enabled', True),
             g=self.gravity,
             mass=self.mass,
-            target_speed=self.target_speed
+            target_speed=self.target_speed,
+            force_target_override=force_target_override
         )
 
     def physics_update(self, u, dt):
@@ -631,4 +626,16 @@ class QuadcopterSimulation:
     def _debug_print(self, msg):
         if debug_config.DEBUG_PHYSICS:
             print(msg)
+
+    def hover(self):
+        """Pause waypoint progression and freeze the lookahead target at the current position."""
+        self._waypoint_paused = True
+        # Freeze the current target position for the controller
+        self._hover_target = self.state[:3].copy()
+
+    def resume_waypoint_progression(self):
+        """Resume waypoint progression and clear hover target."""
+        self._waypoint_paused = False
+        if hasattr(self, '_hover_target'):
+            del self._hover_target
 
