@@ -3,6 +3,33 @@ Quadcopter PyOpenGL Simulation - Main Module
 """
 import sys
 import os
+
+# Handle PyInstaller environment for debug modules
+if hasattr(sys, '_MEIPASS'):
+    # Running as PyInstaller bundle - add debug directory to path
+    debug_path = os.path.join(sys._MEIPASS, 'debug')
+    if debug_path not in sys.path:
+        sys.path.insert(0, debug_path)
+    
+    # Pre-load debug modules and make them available globally
+    import importlib.util
+    
+    # Import debug_config
+    debug_config_path = os.path.join(debug_path, 'debug_config.py')
+    if os.path.exists(debug_config_path):
+        spec = importlib.util.spec_from_file_location("debug_config", debug_config_path)
+        debug_config = importlib.util.module_from_spec(spec)
+        sys.modules['debug_config'] = debug_config
+        spec.loader.exec_module(debug_config)
+    
+    # Import debug_physics
+    debug_physics_path = os.path.join(debug_path, 'debug_physics.py')
+    if os.path.exists(debug_physics_path):
+        spec = importlib.util.spec_from_file_location("debug_physics", debug_physics_path)
+        debug_physics = importlib.util.module_from_spec(spec)
+        sys.modules['debug_physics'] = debug_physics
+        spec.loader.exec_module(debug_physics)
+
 # Add parent directory to path so we can import quadcopter_sim
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -13,8 +40,33 @@ import time
 import numpy as np
 from quadcopter_sim.simulation import QuadcopterSimulation
 from quadcopter_sim.renderer import Renderer
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'debug'))
-import debug_config
+
+# Add debug path for normal execution (non-PyInstaller)
+if not hasattr(sys, '_MEIPASS'):
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'debug'))
+
+# Import debug_config with fallback
+try:
+    import debug_config
+except ImportError:
+    # Create a fallback debug_config module
+    class DebugConfig:
+        DEBUG_KEY_EVENT = True
+        DEBUG_IMGUI_CAPTURE = True
+        DEBUG_ACTION_IGNORE = True
+        DEBUG_MANUAL_MODE_OFF = True
+        DEBUG_KEY_W = True
+        DEBUG_KEY_S = True
+        DEBUG_KEY_A = True
+        DEBUG_KEY_D = True
+        DEBUG_KEY_Q = True
+        DEBUG_KEY_E = True
+        DEBUG_KEY_R = True
+        DEBUG_KEY_F = True
+        DEBUG_MANUAL_RPMS = False
+        DEBUG_PHYSICS = False
+        DEBUG_MANUAL_STATUS = False
+    debug_config = DebugConfig()
 
 def key_callback(window, key, scancode, action, mods):
     print("[DEBUG] key_callback entered")
