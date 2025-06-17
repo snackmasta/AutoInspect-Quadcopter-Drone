@@ -30,7 +30,7 @@ class FlightController:
         self.min_rpm = min_rpm
         
         # Control parameters
-        self.use_pid = False  # Toggle for PID (True) or LQR (False)
+        self.use_pid = True  # Toggle for PID (True) or LQR (False)
         self.target_speed = 1.0
         self.yaw_control_enabled = True
           # Thrust model
