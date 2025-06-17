@@ -185,13 +185,13 @@ class QuadcopterSimulation:
         # Prevent invalid time steps
         if delta_time is None or delta_time <= 1e-6:
             return
-        
-        # Safety checks
+          # Safety checks
         self.safety_system.check_crash_or_low_altitude(self.state_manager)
         self.safety_system.check_recovery(self.state_manager)
         
-        if self.state_manager.crashed:
-            return
+        # Continue simulation even when crashed (removed early return)
+        # if self.state_manager.crashed:
+        #     return
         
         # Compute control inputs
         control_input, rotor_thrusts = self.flight_controller.compute_control(

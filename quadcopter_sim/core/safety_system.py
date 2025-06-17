@@ -31,8 +31,9 @@ class SafetySystem:
         
         if z <= self.crash_threshold and vz < -0.1:
             state_manager.crashed = True
-            state_manager.rotor_speeds[:] = 0
-            print("[CRASH] Drone has crashed or hit dangerously low altitude!")
+            # Removed automatic rotor stopping to allow simulation to continue
+            # state_manager.rotor_speeds[:] = 0
+            print("[CRASH] Drone has crashed or hit dangerously low altitude! (Simulation continues)")
     
     def check_recovery(self, state_manager):
         """Detect persistent falling and trigger recovery mode."""
