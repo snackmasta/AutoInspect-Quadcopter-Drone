@@ -57,8 +57,7 @@ class QuadcopterSimulation:
             self.atmosphere_density, self.max_rpm, self.min_rpm
         )
         self.safety_system = SafetySystem()
-        
-        # Environment and waypoints
+          # Environment and waypoints
         self.environment = Environment(size=3, step=0.5)
         self._init_waypoints()
     
@@ -73,8 +72,7 @@ class QuadcopterSimulation:
     def state(self):
         """Get current state vector."""
         return self.state_manager.state
-    
-    @state.setter 
+      @state.setter 
     def state(self, value):
         """Set state vector."""
         self.state_manager.state = value
@@ -128,11 +126,6 @@ class QuadcopterSimulation:
     def manual_rpms(self):
         """Get manual RPM settings."""
         return self.state_manager.manual_rpms
-    
-    @manual_rpms.setter
-    def manual_rpms(self, value):
-        """Set manual RPM settings."""
-        self.state_manager.manual_rpms = value
     
     @property
     def spinup_done(self):
@@ -239,8 +232,7 @@ class QuadcopterSimulation:
         """Get world positions of all four rotors."""
         return get_rotor_positions(self.state_manager.state, self.arm_length)
     
-    def get_camera_image(self, environment=None, fov=60, res=32, offset=0.2):
+    def get_camera_image(self, fov=60, res=32, offset=0.2):
         """Get simulated camera image of terrain below drone."""
-        # Use provided environment or default to self.environment
-        env = environment if environment is not None else self.environment
-        return get_camera_image(self.state_manager.state, env, fov, res, offset)
+        return get_camera_image(self.state_manager.state, self.environment, fov, res, offset)
+

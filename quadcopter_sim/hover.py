@@ -1,5 +1,5 @@
 import numpy as np
-from quadcopter_sim.position_controller import position_controller
+from .controllers import position_controller
 
 def hover_control(state, mass=3.0, gravity=9.81, k_thrust=1.0, atmosphere_density=1.225):
     """

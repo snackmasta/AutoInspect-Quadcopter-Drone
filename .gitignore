@@ -1,12 +1,29 @@
-quadcopter_sim/__pycache__/drone_body_box.cpython-310.pyc
-quadcopter_sim/__pycache__/environment.cpython-310.pyc
-quadcopter_sim/__pycache__/renderer.cpython-310.pyc
-quadcopter_sim/__pycache__/simulation.cpython-310.pyc
-quadcopter_sim/__pycache__/thrust.cpython-310.pyc
-221364002_Agung Rambujana_3A-TOI
-
-# Ignore Python bytecode cache
+# Python cache files
 __pycache__/
-venv/
 *.pyc
-.gitignore
+*.pyo
+*.pyd
+*.so
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+221364002_Agung Rambujana_3A-TOI/
+imgui.ini
+
+# Logs
+*.log

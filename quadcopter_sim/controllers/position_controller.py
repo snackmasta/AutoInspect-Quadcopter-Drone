@@ -1,5 +1,5 @@
 import numpy as np
-from quadcopter_sim.main_trajectory import get_lookahead_target
+from ..main_trajectory import get_lookahead_target
 
 # PID gains (tuned for minimal oscillation)
 # Position controller gains
