@@ -145,15 +145,34 @@ class QuadcopterSimulation:
     def target_speed(self):
         """Get target speed."""
         return self.flight_controller.target_speed
-    
+
     @target_speed.setter
     def target_speed(self, value):
         """Set target speed."""
         self.flight_controller.target_speed = value
-      # Configuration methods
+    
+    @property
+    def safety_system_enabled(self):
+        """Check if safety system is enabled."""
+        return self.state_manager.safety_system_enabled
+    
+    @safety_system_enabled.setter 
+    def safety_system_enabled(self, value):
+        """Enable or disable safety system."""
+        self.state_manager.safety_system_enabled = value
+        if value:
+            print("[SAFETY] Safety system enabled")
+        else:
+            print("[SAFETY] Safety system disabled")
+    
+    # Configuration methods
     def set_target_speed(self, value):
         """Set target speed for waypoint following."""
         self.flight_controller.set_target_speed(value)
+    
+    def toggle_safety_system(self):
+        """Toggle safety system on/off."""
+        return self.safety_system.toggle_safety_system(self.state_manager)
     
     def get_hover_rpm(self):
         """Calculate RPM needed for hovering."""

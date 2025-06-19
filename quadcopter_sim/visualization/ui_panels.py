@@ -73,6 +73,19 @@ class UIPanels:
             altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
             imgui.plot_lines("Altitude (last 100 steps)", altitudes, graph_size=(300, 80))
         
+        imgui.separator()
+        
+        # Help section
+        if imgui.collapsing_header("Keyboard Controls"):
+            imgui.text("M - Toggle Manual Mode")
+            imgui.text("Ctrl+S - Toggle Safety System")
+            imgui.text("Esc - Emergency Stop")
+            imgui.text("Manual Mode Controls:")
+            imgui.text("  W/S - Pitch Forward/Backward")
+            imgui.text("  A/D - Roll Left/Right")
+            imgui.text("  Q/E - Yaw Left/Right")
+            imgui.text("  R/F - Increase/Decrease Throttle")
+        
         imgui.end()
     
     def draw_situational_awareness_panel(self, sim):
@@ -182,6 +195,20 @@ class UIPanels:
         # Angle telemetry
         roll, pitch, yaw = np.degrees(sim.state[6:9])
         imgui.text(f"Angle (deg): Roll={roll:.1f}, Pitch={pitch:.1f}, Yaw={yaw:.1f}")
+        
+        # Safety system status
+        if sim.safety_system_enabled:
+            imgui.text_colored((0.0, 1.0, 0.0, 1.0), "Safety System: ENABLED")
+        else:
+            imgui.text_colored((1.0, 0.0, 0.0, 1.0), "Safety System: DISABLED")
+        
+        # Safety state indicators
+        if hasattr(sim.state_manager, 'crashed') and sim.state_manager.crashed:
+            imgui.text_colored((1.0, 0.0, 0.0, 1.0), "Status: CRASHED")
+        elif hasattr(sim.state_manager, 'recovery_mode') and sim.state_manager.recovery_mode:
+            imgui.text_colored((1.0, 1.0, 0.0, 1.0), "Status: RECOVERY MODE")
+        else:
+            imgui.text_colored((0.0, 1.0, 0.0, 1.0), "Status: NORMAL")
     
     def _draw_camera_controls(self, camera_controller):
         """Draw camera control sliders."""
