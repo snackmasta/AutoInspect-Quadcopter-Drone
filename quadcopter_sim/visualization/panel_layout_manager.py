@@ -34,7 +34,6 @@ class PanelLayoutManager:
         x, y = panel['position']
         
         # Only set position if panel is not being dragged by user
-        # Check if this is the first frame for this panel or if we should force position
         if not panel.get('user_positioned', False):
             imgui.set_next_window_position(x, y)
         
@@ -43,31 +42,32 @@ class PanelLayoutManager:
         # Mark that we're about to render this panel
         panel['rendered'] = True
         
-    def end_panel(self, name):
-        """Finish rendering a panel and update its size after imgui.end()."""
-        if name in self.panels:            # Store the name to measure size after imgui.end()
-            self.panels[name]['needs_size_update'] = True
-
     def capture_panel_size(self, name):
         """Capture the final size of a panel. Call this immediately after imgui.end()."""
         if name in self.panels:
+            # Get the current window size and position after imgui.end()
+            # Note: These values reflect the final state after rendering
             size = imgui.get_window_size()
             pos = imgui.get_window_position()
+            
+            # Update stored values
+            self.panels[name]['size'] = (size.x, size.y)
             
             # Check if user has moved the panel
             expected_pos = self.panels[name]['position']
             if abs(pos.x - expected_pos[0]) > 5 or abs(pos.y - expected_pos[1]) > 5:
                 # User has moved the panel, mark it as user-positioned
                 self.panels[name]['user_positioned'] = True
-                self.panels[name]['position'] = (pos.x, pos.y)
             
-            self.panels[name]['size'] = (size.x, size.y)
-            self.panels[name]['needs_size_update'] = False
+            # Always update position to current position
+            self.panels[name]['position'] = (pos.x, pos.y)
 
     def update_layout(self):
         """Stack panels using the sizes measured in the previous frame."""
         left_panels = []
         right_panels = []
+        
+        # Separate panels by side preference
         for name in self.render_order:
             if name in self.panels:
                 side = self.panels[name]['preferred_side']
@@ -75,19 +75,21 @@ class PanelLayoutManager:
                     right_panels.append(name)
                 else:
                     left_panels.append(name)
-        # Stack left panels
+        
+        # Stack left panels vertically
         current_y = self.padding
         for name in left_panels:
-            if name in self.panels:
+            if name in self.panels and not self.panels[name].get('user_positioned', False):
                 panel = self.panels[name]
                 panel['position'] = (self.padding, current_y)
                 # Use measured size if available, else min_size
                 height = panel['size'][1] if 'size' in panel else panel['min_size'][1]
                 current_y += height + self.padding
-        # Stack right panels
+        
+        # Stack right panels vertically
         current_y = self.padding
         for name in right_panels:
-            if name in self.panels:
+            if name in self.panels and not self.panels[name].get('user_positioned', False):
                 panel = self.panels[name]
                 width = panel['size'][0] if 'size' in panel else panel['min_size'][0]
                 height = panel['size'][1] if 'size' in panel else panel['min_size'][1]
@@ -105,17 +107,20 @@ class PanelLayoutManager:
         """Get debug information for a panel."""
         if name in self.panels:
             panel = self.panels[name]
-            size = panel.get('size', (0, 0))
-            stored_pos = panel.get('position', (0, 0))
             user_pos = panel.get('user_positioned', False)
             
-            # Get current real-time position from ImGui
+            # Get current real-time position and size from ImGui
             try:
                 current_pos = imgui.get_window_position()
+                current_size = imgui.get_window_size()
                 pos_str = f"{current_pos.x:.0f},{current_pos.y:.0f}"
+                size_str = f"{current_size.x:.0f}x{current_size.y:.0f}"
             except:
-                # Fallback to stored position if ImGui call fails
+                # Fallback to stored values if ImGui calls fail
+                stored_size = panel.get('size', (0, 0))
+                stored_pos = panel.get('position', (0, 0))
                 pos_str = f"{stored_pos[0]:.0f},{stored_pos[1]:.0f}"
+                size_str = f"{stored_size[0]:.0f}x{stored_size[1]:.0f}"
             
-            return f"Size: {size[0]:.0f}x{size[1]:.0f} | Pos: {pos_str} | User: {user_pos}"
+            return f"Size: {size_str} | Pos: {pos_str} | User: {user_pos}"
         return "Panel not found"
