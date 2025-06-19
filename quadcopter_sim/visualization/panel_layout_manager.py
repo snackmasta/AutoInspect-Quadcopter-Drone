@@ -106,7 +106,16 @@ class PanelLayoutManager:
         if name in self.panels:
             panel = self.panels[name]
             size = panel.get('size', (0, 0))
-            pos = panel.get('position', (0, 0))
+            stored_pos = panel.get('position', (0, 0))
             user_pos = panel.get('user_positioned', False)
-            return f"Size: {size[0]:.0f}x{size[1]:.0f} | Pos: {pos[0]:.0f},{pos[1]:.0f} | User: {user_pos}"
+            
+            # Get current real-time position from ImGui
+            try:
+                current_pos = imgui.get_window_position()
+                pos_str = f"{current_pos.x:.0f},{current_pos.y:.0f}"
+            except:
+                # Fallback to stored position if ImGui call fails
+                pos_str = f"{stored_pos[0]:.0f},{stored_pos[1]:.0f}"
+            
+            return f"Size: {size[0]:.0f}x{size[1]:.0f} | Pos: {pos_str} | User: {user_pos}"
         return "Panel not found"
