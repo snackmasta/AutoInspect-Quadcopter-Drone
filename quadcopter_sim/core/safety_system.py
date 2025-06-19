@@ -20,6 +20,10 @@ class SafetySystem:
     
     def check_crash_or_low_altitude(self, state_manager):
         """Detect crash or dangerously low altitude."""
+        # Skip safety checks if disabled
+        if not state_manager.safety_system_enabled:
+            return
+            
         z = state_manager.state[2]
         vz = state_manager.state[5]
         
@@ -34,6 +38,10 @@ class SafetySystem:
     
     def check_recovery(self, state_manager):
         """Detect persistent falling and trigger recovery mode."""
+        # Skip safety checks if disabled
+        if not state_manager.safety_system_enabled:
+            return
+            
         if not hasattr(state_manager, '_vz_history'):
             state_manager._vz_history = []
         
@@ -65,16 +73,18 @@ class SafetySystem:
         
         return kp * error + ki * state_manager._vz_pid_integral + kd * derivative
     
-    def emergency_stop(self, state_manager):
-        """Emergency stop - shut down all rotors."""
-        state_manager.rotor_speeds[:] = 0
-        state_manager.crashed = True
-        print("[EMERGENCY] Emergency stop activated!")
-    
+    def toggle_safety_system(self, state_manager):
+        """Toggle safety system on/off."""
+        state_manager.safety_system_enabled = not state_manager.safety_system_enabled
+        status = "ENABLED" if state_manager.safety_system_enabled else "DISABLED"
+        print(f"[SAFETY] Safety system {status}")
+        return state_manager.safety_system_enabled
+
     def reset_safety_state(self, state_manager):
         """Reset all safety-related state."""
         state_manager.crashed = False
         state_manager.recovery_mode = False
+        # Preserve safety_system_enabled state during reset
         state_manager._vz_history = []
         state_manager._vz_pid_integral = 0.0
         state_manager._vz_pid_prev_error = 0.0

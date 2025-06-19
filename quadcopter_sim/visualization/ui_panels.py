@@ -67,11 +67,28 @@ class UIPanels:
         self._draw_manual_controls(sim)
         
         imgui.separator()
+          # Safety System Controls
+        changed, new_safety_enabled = imgui.checkbox("Safety System", sim.safety_system_enabled)
+        if changed:
+            sim.safety_system_enabled = new_safety_enabled
+        
+        imgui.separator()
         
         # Altitude plot
         if len(sim.trajectory) > 1:
             altitudes = np.array([p[2] for p in sim.trajectory[-100:]], dtype=np.float32)
             imgui.plot_lines("Altitude (last 100 steps)", altitudes, graph_size=(300, 80))
+        
+        imgui.separator()
+          # Help section
+        if imgui.collapsing_header("Keyboard Controls"):
+            imgui.text("M - Toggle Manual Mode")
+            imgui.text("Ctrl+S - Toggle Safety System")
+            imgui.text("Manual Mode Controls:")
+            imgui.text("  W/S - Pitch Forward/Backward")
+            imgui.text("  A/D - Roll Left/Right")
+            imgui.text("  Q/E - Yaw Left/Right")
+            imgui.text("  R/F - Increase/Decrease Throttle")
         
         imgui.end()
     
@@ -181,7 +198,19 @@ class UIPanels:
         
         # Angle telemetry
         roll, pitch, yaw = np.degrees(sim.state[6:9])
-        imgui.text(f"Angle (deg): Roll={roll:.1f}, Pitch={pitch:.1f}, Yaw={yaw:.1f}")
+        imgui.text(f"Angle (deg): Roll={roll:.1f}, Pitch={pitch:.1f}, Yaw={yaw:.1f}")        # Safety system status
+        if sim.safety_system_enabled:
+            imgui.text_colored("Safety System: ENABLED", 0.0, 1.0, 0.0, 1.0)
+        else:
+            imgui.text_colored("Safety System: DISABLED", 1.0, 0.0, 0.0, 1.0)
+        
+        # Safety state indicators
+        if hasattr(sim.state_manager, 'crashed') and sim.state_manager.crashed:
+            imgui.text_colored("Status: CRASHED", 1.0, 0.0, 0.0, 1.0)
+        elif hasattr(sim.state_manager, 'recovery_mode') and sim.state_manager.recovery_mode:
+            imgui.text_colored("Status: RECOVERY MODE", 1.0, 1.0, 0.0, 1.0)
+        else:
+            imgui.text_colored("Status: NORMAL", 0.0, 1.0, 0.0, 1.0)
     
     def _draw_camera_controls(self, camera_controller):
         """Draw camera control sliders."""

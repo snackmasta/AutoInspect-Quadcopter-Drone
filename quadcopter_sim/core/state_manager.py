@@ -42,6 +42,7 @@ class StateManager:
         # Safety state
         self.crashed = False
         self.recovery_mode = False
+        self.safety_system_enabled = True  # Safety system toggle
         
         # Hover state
         self._waypoint_paused = False
@@ -67,6 +68,7 @@ class StateManager:
         self.rotor_speeds[:] = 0
         self.crashed = False
         self.recovery_mode = False
+        self.safety_system_enabled = True
         self._waypoint_paused = False
         if hasattr(self, '_hover_target'):
             del self._hover_target
