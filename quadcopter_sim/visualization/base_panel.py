@@ -29,13 +29,12 @@ class BasePanel:
             'gauge_bg': (0.15, 0.15, 0.2, 1.0),       # Gauge background
             'gauge_fill': (0.2, 0.6, 1.0, 1.0),       # Gauge fill
         }
-        
-        # Button dimensions for consistency
+          # Button dimensions for consistency - more compact
         self.button_size = {
-            'small': (80, 30),
-            'medium': (120, 35),
-            'large': (160, 40),
-            'emergency': (140, 50),
+            'small': (70, 25),
+            'medium': (100, 30),
+            'large': (140, 35),
+            'emergency': (120, 40),
         }
     
     def apply_scada_theme(self):

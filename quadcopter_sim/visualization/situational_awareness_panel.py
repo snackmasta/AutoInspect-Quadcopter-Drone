@@ -10,11 +10,9 @@ class SituationalAwarenessPanel(BasePanel):
     
     def draw(self, sim):
         """Draw the situational awareness panel with SCADA styling."""
-        self.apply_scada_theme()
-        
-        # Position on the right side, larger
-        imgui.set_next_window_position(self.window_width - 450, 10)
-        imgui.set_next_window_size(440, 500)
+        self.apply_scada_theme()        # Position on the right side, more compact
+        imgui.set_next_window_position(self.window_width - 430, 10)
+        imgui.set_next_window_size(420, 320)
         
         imgui.begin("■ SITUATIONAL AWARENESS", 
                    flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | 
@@ -36,9 +34,7 @@ class SituationalAwarenessPanel(BasePanel):
         self.draw_value_display("GROUND SPEED", f"{ground_speed:.2f}", "m/s", speed_status, 140)
         self.draw_value_display("VERTICAL SPEED", f"{vs:+.2f}", "m/s", vs_status, 140)
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
         
         # Navigation section
         self.draw_section_header("NAVIGATION")
@@ -50,21 +46,16 @@ class SituationalAwarenessPanel(BasePanel):
         self.draw_value_display("DISTANCE TO WP", f"{dist_to_wp:.2f}", "m", nav_status, 140)
         
         # Mission progress bar
-        imgui.spacing()
-        imgui.text("MISSION PROGRESS:")
+        imgui.text("PROGRESS:")
         self._draw_mission_progress(sim)
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
         
         # Propulsion system section
-        self.draw_section_header("PROPULSION SYSTEM")
+        self.draw_section_header("PROPULSION")
         
-        imgui.text("ROTOR RPM:")
-        imgui.spacing()
-        
-        # RPM bars in a 2x2 grid
+        # RPM bars in a 2x2 grid - more compact
+        imgui.columns(2, "rpm_grid")
         for i in range(4):
             rpm = sim.rotor_speeds[i]
             rpm_ratio = min(rpm / 12000.0, 1.0)
@@ -79,58 +70,12 @@ class SituationalAwarenessPanel(BasePanel):
                 bar_color = self.colors['status_alarm']
             
             imgui.push_style_color(imgui.COLOR_PLOT_HISTOGRAM, *bar_color)
-            imgui.progress_bar(rpm_ratio, size=(100, 20), overlay=f"M{i+1}: {int(rpm)}")
+            imgui.progress_bar(rpm_ratio, size=(80, 15), overlay=f"M{i+1}: {int(rpm)}")
             imgui.pop_style_color()
             
-            if i == 1:  # After second motor, go to next line
-                imgui.new_line()
-            elif i < 3:
-                imgui.same_line()
-        
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-        
-        # System status section
-        self.draw_section_header("SYSTEM STATUS")
-        
-        # System status indicators
-        if hasattr(sim.state_manager, 'crashed') and sim.state_manager.crashed:
-            self.draw_status_indicator("FLIGHT SYSTEM", 'alarm')
-            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['status_alarm'])
-            imgui.text("■ SYSTEM CRASHED")
-            imgui.pop_style_color()
-        elif hasattr(sim.state_manager, 'recovery_mode') and sim.state_manager.recovery_mode:
-            self.draw_status_indicator("FLIGHT SYSTEM", 'warn')
-            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['status_warn'])
-            imgui.text("■ RECOVERY MODE ACTIVE")
-            imgui.pop_style_color()
-        else:
-            self.draw_status_indicator("FLIGHT SYSTEM", 'good')
-            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['status_good'])
-            imgui.text("■ SYSTEM OPERATIONAL")
-            imgui.pop_style_color()
-        
-        safety_status = 'good' if sim.safety_system_enabled else 'warn'
-        manual_status = 'warn' if sim.manual_mode else 'good'
-        
-        self.draw_status_indicator("SAFETY SYSTEM", safety_status)
-        self.draw_status_indicator("AUTO CONTROL", manual_status)
-        
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-        
-        # Flight data visualization
-        self.draw_section_header("FLIGHT DATA")
-        
-        # Recent altitude plot
-        if len(sim.trajectory) > 1:
-            altitudes = np.array([p[2] for p in sim.trajectory[-50:]], dtype=np.float32)
-            imgui.text("ALTITUDE TREND (50 pts):")
-            imgui.push_style_color(imgui.COLOR_PLOT_LINES, *self.colors['accent_cyan'])
-            imgui.plot_lines("", altitudes, graph_size=(400, 80))
-            imgui.pop_style_color()
+            if i % 2 == 1:  # After every second motor, go to next column
+                imgui.next_column()
+        imgui.columns(1)
         
         imgui.end()
     

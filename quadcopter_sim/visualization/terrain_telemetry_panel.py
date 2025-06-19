@@ -9,11 +9,9 @@ class TerrainTelemetryPanel(BasePanel):
     
     def draw(self, sim, environment):
         """Draw terrain distance telemetry with SCADA styling."""
-        self.apply_scada_theme()
-        
-        # Position at bottom left
-        imgui.set_next_window_position(10, self.window_height - 250)
-        imgui.set_next_window_size(420, 240)
+        self.apply_scada_theme()        # Position at bottom left - aligned with mission control panel
+        imgui.set_next_window_position(10, 470)
+        imgui.set_next_window_size(420, 160)
         
         imgui.begin("■ TERRAIN TELEMETRY", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
         
@@ -38,10 +36,14 @@ class TerrainTelemetryPanel(BasePanel):
         
         self.draw_value_display("MIN CLEARANCE", f"{min_dist:.3f}", "m", clearance_status, 140)
         
-        imgui.spacing()
         imgui.text("CORNER DISTANCES:")
+        # Display corners in 2x2 grid for compactness
+        imgui.columns(2, "corner_grid")
         for i, dist in enumerate(distances):
             corner_status = 'good' if dist > 1.5 else 'warn' if dist > 0.8 else 'alarm'
-            self.draw_value_display(f"CORNER {i+1}", f"{dist:.3f}", "m", corner_status, 100)
+            self.draw_value_display(f"C{i+1}", f"{dist:.3f}", "m", corner_status, 60)
+            if i % 2 == 1:  # After every second corner, go to next column
+                imgui.next_column()
+        imgui.columns(1)
         
         imgui.end()

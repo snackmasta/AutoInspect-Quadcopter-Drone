@@ -15,9 +15,9 @@ class MissionControlPanel(BasePanel):
         io = imgui.get_io()
         io.display_size = (self.window_width, self.window_height)
         
-        # Main control panel - larger and more prominent
+        # Main control panel - compact to fit screen
         imgui.set_next_window_position(10, 10)
-        imgui.set_next_window_size(420, 650)
+        imgui.set_next_window_size(420, 450)
         imgui.begin("■ DRONE CONTROL SYSTEM", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
         
         # System status header
@@ -32,9 +32,7 @@ class MissionControlPanel(BasePanel):
         self.draw_status_indicator("SAFETY SYSTEM", safety_status)
         self.draw_status_indicator("AUTO MODE", manual_status)
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
         
         # Flight control section
         self.draw_section_header("FLIGHT OPERATIONS")
@@ -52,8 +50,6 @@ class MissionControlPanel(BasePanel):
         if self.draw_large_button("RESUME WP", self.button_size['large']):
             sim.resume_waypoint_progression()
         
-        imgui.spacing()
-        
         # Secondary controls
         if self.draw_large_button("PAUSE", self.button_size['medium']):
             pass
@@ -64,9 +60,7 @@ class MissionControlPanel(BasePanel):
         if self.draw_large_button("RESET", self.button_size['medium'], 'emergency'):
             sim.reset()
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
         
         # Flight parameters section
         self.draw_section_header("FLIGHT PARAMETERS")
@@ -79,54 +73,19 @@ class MissionControlPanel(BasePanel):
         if changed:
             sim.set_target_speed(new_speed)
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
         
         # Telemetry section
         self.draw_section_header("TELEMETRY DATA")
         self._draw_telemetry(sim)
         
-        imgui.spacing()
         imgui.separator()
-        imgui.spacing()
-        
-        # Manual control section
-        self.draw_section_header("MANUAL CONTROL")
-        self._draw_manual_controls(sim)
-        
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-        
-        # Camera control section
-        self.draw_section_header("CAMERA CONTROL")
-        self._draw_camera_controls(camera_controller)
-        
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
         
         # Safety system section
-        self.draw_section_header("SAFETY SYSTEMS")
+        self.draw_section_header("SAFETY SYSTEM")
         changed, new_safety_enabled = imgui.checkbox("ENABLE SAFETY SYSTEM", sim.safety_system_enabled)
         if changed:
             sim.safety_system_enabled = new_safety_enabled
-        
-        imgui.spacing()
-        
-        # System information
-        if imgui.collapsing_header("SYSTEM HELP"):
-            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['text_secondary'])
-            imgui.text("KEYBOARD CONTROLS:")
-            imgui.text("• M - Toggle Manual Mode")
-            imgui.text("• Ctrl+S - Toggle Safety System")
-            imgui.text("MANUAL MODE CONTROLS:")
-            imgui.text("• W/S - Pitch Forward/Backward")
-            imgui.text("• A/D - Roll Left/Right")
-            imgui.text("• Q/E - Yaw Left/Right")
-            imgui.text("• R/F - Increase/Decrease Throttle")
-            imgui.pop_style_color()
         
         imgui.end()
     
@@ -134,25 +93,18 @@ class MissionControlPanel(BasePanel):
         """Draw basic telemetry information with SCADA styling."""
         pos, vel = sim.state[:3], sim.state[3:]
         
-        # Position data
-        self.draw_value_display("POS X", f"{pos[0]:.2f}", "m", 'good', 100)
-        self.draw_value_display("POS Y", f"{pos[1]:.2f}", "m", 'good', 100)
-        self.draw_value_display("POS Z", f"{pos[2]:.2f}", "m", 'good', 100)
+        # Position and velocity in columns for compactness
+        imgui.columns(3, "telemetry")
+        self.draw_value_display("X", f"{pos[0]:.1f}", "m", 'good', 60)
+        imgui.next_column()
+        self.draw_value_display("Y", f"{pos[1]:.1f}", "m", 'good', 60)
+        imgui.next_column()
+        self.draw_value_display("Z", f"{pos[2]:.1f}", "m", 'good', 60)
+        imgui.columns(1)
         
-        imgui.spacing()
-        
-        # Velocity data
-        self.draw_value_display("VEL X", f"{vel[0]:.2f}", "m/s", 'good', 100)
-        self.draw_value_display("VEL Y", f"{vel[1]:.2f}", "m/s", 'good', 100)
-        self.draw_value_display("VEL Z", f"{vel[2]:.2f}", "m/s", 'good', 100)
-        
-        imgui.spacing()
-        
-        # Angle telemetry
+        # Angles in compact format
         roll, pitch, yaw = np.degrees(sim.state[6:9])
-        self.draw_value_display("ROLL", f"{roll:.1f}", "°", 'good', 100)
-        self.draw_value_display("PITCH", f"{pitch:.1f}", "°", 'good', 100)
-        self.draw_value_display("YAW", f"{yaw:.1f}", "°", 'good', 100)
+        imgui.text(f"RPY: {roll:.0f}° {pitch:.0f}° {yaw:.0f}°")
         
         imgui.spacing()
         

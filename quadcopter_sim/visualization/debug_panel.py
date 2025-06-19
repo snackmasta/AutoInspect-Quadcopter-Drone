@@ -12,35 +12,42 @@ class DebugPanel(BasePanel):
         if debug_config is None:
             return
             
-        self.apply_scada_theme()
-        
-        # Position at bottom right
-        imgui.set_next_window_position(self.window_width - 450, self.window_height - 300)
-        imgui.set_next_window_size(440, 290)
+        self.apply_scada_theme()        # Position at bottom right - aligned with situational awareness panel
+        imgui.set_next_window_position(self.window_width - 430, 340)
+        imgui.set_next_window_size(420, 190)
         
         imgui.begin("■ SYSTEM DIAGNOSTICS", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
         
         self.draw_section_header("DEBUG CONTROLS")
         
-        # Key event debugging
-        imgui.text("INPUT SYSTEM:")
-        changed, debug_config.DEBUG_KEY_EVENT = imgui.checkbox("KEY EVENT DEBUG", debug_config.DEBUG_KEY_EVENT)
+        # Key event debugging - more compact layout
+        imgui.columns(2, "debug_main")
+        
+        # Left column - Input and Flight Controls
+        imgui.text("INPUT/FLIGHT:")
+        changed, debug_config.DEBUG_KEY_EVENT = imgui.checkbox("Key Events", debug_config.DEBUG_KEY_EVENT)
         if changed:
             status = "ENABLED" if debug_config.DEBUG_KEY_EVENT else "DISABLED"
             print(f"[DEBUG] Key Event Debug {status}")
         
-        changed, debug_config.DEBUG_IMGUI_CAPTURE = imgui.checkbox("IMGUI CAPTURE DEBUG", debug_config.DEBUG_IMGUI_CAPTURE)
-        changed, debug_config.DEBUG_ACTION_IGNORE = imgui.checkbox("ACTION IGNORE DEBUG", debug_config.DEBUG_ACTION_IGNORE)
+        _, debug_config.DEBUG_IMGUI_CAPTURE = imgui.checkbox("ImGui Capture", debug_config.DEBUG_IMGUI_CAPTURE)
+        _, debug_config.DEBUG_ACTION_IGNORE = imgui.checkbox("Action Ignore", debug_config.DEBUG_ACTION_IGNORE)
+        _, debug_config.DEBUG_MANUAL_MODE_OFF = imgui.checkbox("Manual Mode Off", debug_config.DEBUG_MANUAL_MODE_OFF)
         
+        imgui.next_column()
+        
+        # Right column - System Controls
+        imgui.text("SYSTEM:")
+        _, debug_config.DEBUG_MANUAL_RPMS = imgui.checkbox("Manual RPMs", debug_config.DEBUG_MANUAL_RPMS)
+        _, debug_config.DEBUG_PHYSICS = imgui.checkbox("Physics", debug_config.DEBUG_PHYSICS)
+        _, debug_config.DEBUG_MANUAL_STATUS = imgui.checkbox("Manual Status", debug_config.DEBUG_MANUAL_STATUS)
+        
+        imgui.columns(1)
+        
+        # Key debug in compact grid
         imgui.spacing()
-        imgui.text("FLIGHT CONTROLS:")
-        
-        # Manual mode debugging
-        changed, debug_config.DEBUG_MANUAL_MODE_OFF = imgui.checkbox("MANUAL MODE OFF DEBUG", debug_config.DEBUG_MANUAL_MODE_OFF)
-        
-        # Individual key debugging - arranged in a grid
-        imgui.text("KEY DEBUG:")
-        imgui.columns(4, "key_debug")
+        imgui.text("KEYS:")
+        imgui.columns(8, "key_debug")
         _, debug_config.DEBUG_KEY_W = imgui.checkbox("W", debug_config.DEBUG_KEY_W)
         imgui.next_column()
         _, debug_config.DEBUG_KEY_S = imgui.checkbox("S", debug_config.DEBUG_KEY_S)
@@ -57,12 +64,6 @@ class DebugPanel(BasePanel):
         imgui.next_column()
         _, debug_config.DEBUG_KEY_F = imgui.checkbox("F", debug_config.DEBUG_KEY_F)
         imgui.columns(1)
-        
-        imgui.spacing()
-        imgui.text("SYSTEM DEBUG:")
-        _, debug_config.DEBUG_MANUAL_RPMS = imgui.checkbox("MANUAL RPMS DEBUG", debug_config.DEBUG_MANUAL_RPMS)
-        _, debug_config.DEBUG_PHYSICS = imgui.checkbox("PHYSICS DEBUG", debug_config.DEBUG_PHYSICS)
-        _, debug_config.DEBUG_MANUAL_STATUS = imgui.checkbox("MANUAL STATUS DEBUG", debug_config.DEBUG_MANUAL_STATUS)
         
         # Debug status indicator
         imgui.spacing()
