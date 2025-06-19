@@ -17,6 +17,14 @@ class CameraController:
     def handle_mouse(self, window):
         """Handle mouse input for camera controls."""
         import glfw
+        import imgui
+        
+        # Check if ImGui wants to capture mouse (cursor is over UI elements)
+        io = imgui.get_io()
+        if io.want_capture_mouse:
+            # ImGui is handling the mouse, don't move camera
+            self._dragging = False
+            return
         
         # Mouse drag to orbit (left-right controls angle_z, up-down controls angle_x)
         if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
@@ -36,8 +44,11 @@ class CameraController:
             
         # Mouse wheel to zoom
         def scroll_callback(window, xoffset, yoffset):
-            self.zoom *= 0.95 ** yoffset
-            self.zoom = max(0.2, min(3.0, self.zoom))
+            # Only zoom if ImGui doesn't want to capture mouse
+            io = imgui.get_io()
+            if not io.want_capture_mouse:
+                self.zoom *= 0.95 ** yoffset
+                self.zoom = max(0.2, min(3.0, self.zoom))
         glfw.set_scroll_callback(window, scroll_callback)
     
     def setup_camera_view(self, center):
