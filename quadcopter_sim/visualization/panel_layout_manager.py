@@ -19,9 +19,11 @@ class PanelLayoutManager:
             'min_size': min_size,
             'position': (0, 0),
             'size': min_size,
-            'rendered': False
+            'rendered': False,
+            'user_positioned': False
         }
-        if name not in self.render_order:            self.render_order.append(name)
+        if name not in self.render_order:
+            self.render_order.append(name)
     
     def begin_panel(self, name):
         """Start rendering a panel at its calculated position."""
@@ -31,8 +33,11 @@ class PanelLayoutManager:
         panel = self.panels[name]
         x, y = panel['position']
         
-        # Set position for the panel
-        imgui.set_next_window_position(x, y)
+        # Only set position if panel is not being dragged by user
+        # Check if this is the first frame for this panel or if we should force position
+        if not panel.get('user_positioned', False):
+            imgui.set_next_window_position(x, y)
+        
         # Set size constraints to allow content-based sizing
         imgui.set_next_window_size_constraints((100, 50), (800, 1000))
         # Mark that we're about to render this panel
@@ -40,14 +45,22 @@ class PanelLayoutManager:
         
     def end_panel(self, name):
         """Finish rendering a panel and update its size after imgui.end()."""
-        if name in self.panels:
-            # Store the name to measure size after imgui.end()
+        if name in self.panels:            # Store the name to measure size after imgui.end()
             self.panels[name]['needs_size_update'] = True
     
     def capture_panel_size(self, name):
         """Capture the final size of a panel. Call this immediately after imgui.end()."""
         if name in self.panels:
             size = imgui.get_window_size()
+            pos = imgui.get_window_position()
+            
+            # Check if user has moved the panel
+            expected_pos = self.panels[name]['position']
+            if abs(pos.x - expected_pos[0]) > 5 or abs(pos.y - expected_pos[1]) > 5:
+                # User has moved the panel, mark it as user-positioned
+                self.panels[name]['user_positioned'] = True
+                self.panels[name]['position'] = (pos.x, pos.y)
+            
             self.panels[name]['size'] = (size.x, size.y)
             self.panels[name]['needs_size_update'] = False
             print(f"[PanelLayoutManager] capture_panel_size: {name} size={self.panels[name]['size']}")

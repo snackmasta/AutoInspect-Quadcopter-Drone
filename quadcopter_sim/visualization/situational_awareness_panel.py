@@ -17,8 +17,7 @@ class SituationalAwarenessPanel(BasePanel):
             # Fallback to old positioning
             imgui.set_next_window_position(self.window_width - 430, 10)
         
-        imgui.begin("■ SITUATIONAL AWARENESS", 
-                   flags=imgui.WINDOW_NO_MOVE)
+        imgui.begin("■ SITUATIONAL AWARENESS")
         
         pos, vel = sim.state[:3], sim.state[3:]
         

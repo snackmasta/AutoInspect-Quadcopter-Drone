@@ -16,7 +16,7 @@ class TerrainTelemetryPanel(BasePanel):
             # Fallback to old positioning
             imgui.set_next_window_position(10, 500)
         
-        imgui.begin("■ TERRAIN TELEMETRY", flags=imgui.WINDOW_NO_MOVE)
+        imgui.begin("■ TERRAIN TELEMETRY")
         
         from ..drone_body_box import get_body_box_corners
         

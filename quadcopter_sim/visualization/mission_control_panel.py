@@ -20,7 +20,7 @@ class MissionControlPanel(BasePanel):
             # Fallback to old positioning
             imgui.set_next_window_position(10, 10)
         
-        imgui.begin("■ DRONE CONTROL SYSTEM", flags=imgui.WINDOW_NO_MOVE)
+        imgui.begin("■ DRONE CONTROL SYSTEM")
         
         # System status header
         self.draw_section_header("SYSTEM STATUS")

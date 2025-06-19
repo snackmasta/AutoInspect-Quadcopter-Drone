@@ -19,7 +19,7 @@ class DebugPanel(BasePanel):
             # Fallback to old positioning
             imgui.set_next_window_position(self.window_width - 430, 400)
         
-        imgui.begin("■ SYSTEM DIAGNOSTICS", flags=imgui.WINDOW_NO_MOVE)
+        imgui.begin("■ SYSTEM DIAGNOSTICS")
         
         self.draw_section_header("DEBUG CONTROLS")
         
