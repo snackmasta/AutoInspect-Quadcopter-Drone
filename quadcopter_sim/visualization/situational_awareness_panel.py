@@ -8,13 +8,17 @@ from .base_panel import BasePanel
 class SituationalAwarenessPanel(BasePanel):
     """Situational awareness panel with real-time monitoring."""
     
-    def draw(self, sim):
+    def draw(self, sim, layout_manager=None):
         """Draw the situational awareness panel with SCADA styling."""
-        self.apply_scada_theme()        # Position on the right side, auto-size to fit content
-        imgui.set_next_window_position(self.window_width - 430, 10)
+        self.apply_scada_theme()
+        
+        # Position is handled by layout manager if provided
+        if layout_manager is None:
+            # Fallback to old positioning
+            imgui.set_next_window_position(self.window_width - 430, 10)
+        
         imgui.begin("■ SITUATIONAL AWARENESS", 
-                   flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | 
-                         imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+                   flags=imgui.WINDOW_NO_MOVE)
         
         pos, vel = sim.state[:3], sim.state[3:]
         

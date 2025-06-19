@@ -7,14 +7,19 @@ from .base_panel import BasePanel
 class DebugPanel(BasePanel):
     """Debug control panel with SCADA styling."""
     
-    def draw(self, debug_config=None):
+    def draw(self, debug_config=None, layout_manager=None):
         """Draw debug control panel with SCADA styling."""
         if debug_config is None:
             return
             
-        self.apply_scada_theme()        # Position at bottom right - auto-size to fit content
-        imgui.set_next_window_position(self.window_width - 430, 400)
-        imgui.begin("■ SYSTEM DIAGNOSTICS", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+        self.apply_scada_theme()
+        
+        # Position is handled by layout manager if provided
+        if layout_manager is None:
+            # Fallback to old positioning
+            imgui.set_next_window_position(self.window_width - 430, 400)
+        
+        imgui.begin("■ SYSTEM DIAGNOSTICS", flags=imgui.WINDOW_NO_MOVE)
         
         self.draw_section_header("DEBUG CONTROLS")
         

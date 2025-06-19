@@ -170,11 +170,8 @@ def main():
         renderer.reshape(width, height)
         imgui.new_frame()
         
-        # Draw SCADA-styled debug panel using UI panels
-        renderer.ui_panels.draw_debug_panel(debug_config)
-        
         sim.step(delta_time)
-        renderer.draw_scene()
+        renderer.draw_scene(debug_config)
         imgui.render()
         draw_data = imgui.get_draw_data()
         if draw_data is not None:

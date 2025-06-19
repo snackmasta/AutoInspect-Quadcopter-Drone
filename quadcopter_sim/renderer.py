@@ -106,28 +106,16 @@ class Renderer:
         """Draw the ground grid (legacy compatibility)."""
         self.environment.draw()
     
-    def draw_scene(self):
+    def draw_scene(self, debug_config=None):
         """Main scene drawing method."""
         sim = self.sim
         
         # Update terrain scanning
         self.terrain_scanner.update(sim, self.environment)
         
-        # Draw UI panels
-        self.ui_panels.draw_mission_control_panel(sim, self.camera_controller)
-        self.ui_panels.draw_situational_awareness_panel(sim)
-        
-        # Camera display in ImGui
-        imgui.separator()
-        if self.terrain_scanner.show_camera:
-            imgui.text("Camera (heightmap, center)")
-            cam_data = self.terrain_scanner.get_camera_display_data(sim, self.environment)
-            if cam_data is not None:
-                imgui.plot_lines("", cam_data, graph_size=(300, 60))
-            imgui.separator()
-        
-        # Draw terrain telemetry
-        self.ui_panels.draw_terrain_telemetry(sim, self.environment)
+        # Draw all UI panels with proper layout management
+        self.ui_panels.draw_all_panels(sim, self.camera_controller, self.environment, 
+                                      debug_config=debug_config, terrain_scanner=self.terrain_scanner)
         
         # 3D Scene rendering
         self.scene_renderer.clear_scene()
