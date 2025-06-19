@@ -20,6 +20,10 @@ class DebugPanel(BasePanel):
             imgui.set_next_window_position(self.window_width - 430, 400)
         
         imgui.begin("■ SYSTEM DIAGNOSTICS")
+          # Show debug info if layout manager is available
+        if layout_manager:
+            imgui.text_colored(layout_manager.get_panel_debug_info('debug_panel'), 0.5, 0.5, 0.5, 1.0)
+            imgui.separator()
         
         self.draw_section_header("DEBUG CONTROLS")
         

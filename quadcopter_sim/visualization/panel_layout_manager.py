@@ -47,7 +47,7 @@ class PanelLayoutManager:
         """Finish rendering a panel and update its size after imgui.end()."""
         if name in self.panels:            # Store the name to measure size after imgui.end()
             self.panels[name]['needs_size_update'] = True
-    
+
     def capture_panel_size(self, name):
         """Capture the final size of a panel. Call this immediately after imgui.end()."""
         if name in self.panels:
@@ -63,7 +63,6 @@ class PanelLayoutManager:
             
             self.panels[name]['size'] = (size.x, size.y)
             self.panels[name]['needs_size_update'] = False
-            print(f"[PanelLayoutManager] capture_panel_size: {name} size={self.panels[name]['size']}")
 
     def update_layout(self):
         """Stack panels using the sizes measured in the previous frame."""
@@ -101,3 +100,13 @@ class PanelLayoutManager:
         self.window_width = width
         self.window_height = height
         self.update_layout()
+
+    def get_panel_debug_info(self, name):
+        """Get debug information for a panel."""
+        if name in self.panels:
+            panel = self.panels[name]
+            size = panel.get('size', (0, 0))
+            pos = panel.get('position', (0, 0))
+            user_pos = panel.get('user_positioned', False)
+            return f"Size: {size[0]:.0f}x{size[1]:.0f} | Pos: {pos[0]:.0f},{pos[1]:.0f} | User: {user_pos}"
+        return "Panel not found"

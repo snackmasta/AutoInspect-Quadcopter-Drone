@@ -21,6 +21,10 @@ class MissionControlPanel(BasePanel):
             imgui.set_next_window_position(10, 10)
         
         imgui.begin("■ DRONE CONTROL SYSTEM")
+          # Show debug info if layout manager is available
+        if layout_manager:
+            imgui.text_colored(layout_manager.get_panel_debug_info('mission_control'), 0.5, 0.5, 0.5, 1.0)
+            imgui.separator()
         
         # System status header
         self.draw_section_header("SYSTEM STATUS")

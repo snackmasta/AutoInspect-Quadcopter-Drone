@@ -18,6 +18,10 @@ class SituationalAwarenessPanel(BasePanel):
             imgui.set_next_window_position(self.window_width - 430, 10)
         
         imgui.begin("■ SITUATIONAL AWARENESS")
+          # Show debug info if layout manager is available
+        if layout_manager:
+            imgui.text_colored(layout_manager.get_panel_debug_info('situational_awareness'), 0.5, 0.5, 0.5, 1.0)
+            imgui.separator()
         
         pos, vel = sim.state[:3], sim.state[3:]
         

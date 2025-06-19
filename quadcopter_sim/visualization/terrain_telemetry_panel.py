@@ -17,6 +17,10 @@ class TerrainTelemetryPanel(BasePanel):
             imgui.set_next_window_position(10, 500)
         
         imgui.begin("■ TERRAIN TELEMETRY")
+          # Show debug info if layout manager is available
+        if layout_manager:
+            imgui.text_colored(layout_manager.get_panel_debug_info('terrain_telemetry'), 0.5, 0.5, 0.5, 1.0)
+            imgui.separator()
         
         from ..drone_body_box import get_body_box_corners
         
