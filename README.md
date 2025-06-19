@@ -48,7 +48,7 @@ A comprehensive quadcopter simulation system with realistic physics, multiple co
 
 ### Control Algorithms
 - **PID Controllers**: Position and attitude control with tunable parameters
-- **LQR Control**: Linear Quadratic Regulator for optimal control
+- **LQR Control**: Linear Quadratic Regulator for optimal control (still developing)
 - **Lookahead Control**: Advanced path following with predictive targeting
 
 ### Visualization & UI
