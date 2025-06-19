@@ -71,12 +71,7 @@ class SafetySystem:
         derivative = (error - state_manager._vz_pid_prev_error) / dt
         state_manager._vz_pid_prev_error = error
         
-        return kp * error + ki * state_manager._vz_pid_integral + kd * derivative    
-    def emergency_stop(self, state_manager):
-        """Emergency stop - shut down all rotors."""
-        state_manager.rotor_speeds[:] = 0
-        state_manager.crashed = True
-        print("[EMERGENCY] Emergency stop activated!")
+        return kp * error + ki * state_manager._vz_pid_integral + kd * derivative
     
     def toggle_safety_system(self, state_manager):
         """Toggle safety system on/off."""

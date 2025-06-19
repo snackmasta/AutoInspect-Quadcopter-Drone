@@ -50,18 +50,11 @@ def key_callback(window, key, scancode, action, mods):
                 delattr(sim, 'manual_yaw')
             print(f"[DEBUG] Exited manual mode - reset manual RPMs")
         print(f"Manual mode: {sim.manual_mode}")
-    
-    # Toggle safety system
+      # Toggle safety system
     if key == glfw.KEY_S and mods == glfw.MOD_CONTROL:
         sim.toggle_safety_system()
         print(f"Safety system: {'ENABLED' if sim.safety_system_enabled else 'DISABLED'}")
         return  # Don't process S key as movement when Ctrl is held
-    
-    # Emergency stop
-    if key == glfw.KEY_ESCAPE:
-        sim.safety_system.emergency_stop(sim.state_manager)
-        print("EMERGENCY STOP ACTIVATED!")
-        return
 
     # Only process manual controls if in manual mode
     if not sim.manual_mode:
