@@ -10,13 +10,11 @@ class SituationalAwarenessPanel(BasePanel):
     
     def draw(self, sim):
         """Draw the situational awareness panel with SCADA styling."""
-        self.apply_scada_theme()        # Position on the right side, more compact
+        self.apply_scada_theme()        # Position on the right side, auto-size to fit content
         imgui.set_next_window_position(self.window_width - 430, 10)
-        imgui.set_next_window_size(420, 320)
-        
         imgui.begin("■ SITUATIONAL AWARENESS", 
                    flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | 
-                         imgui.WINDOW_NO_COLLAPSE)
+                         imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
         
         pos, vel = sim.state[:3], sim.state[3:]
         
@@ -76,6 +74,23 @@ class SituationalAwarenessPanel(BasePanel):
             if i % 2 == 1:  # After every second motor, go to next column
                 imgui.next_column()
         imgui.columns(1)
+        
+        imgui.separator()
+        
+        # System status section
+        self.draw_section_header("SYSTEM STATUS")
+        
+        # System status indicators
+        if hasattr(sim.state_manager, 'crashed') and sim.state_manager.crashed:
+            self.draw_status_indicator("FLIGHT SYSTEM", 'alarm')
+        else:
+            self.draw_status_indicator("FLIGHT SYSTEM", 'good')
+        
+        safety_status = 'good' if sim.safety_system_enabled else 'warn'
+        manual_status = 'warn' if sim.manual_mode else 'good'
+        
+        self.draw_status_indicator("SAFETY SYSTEM", safety_status)
+        self.draw_status_indicator("AUTO CONTROL", manual_status)
         
         imgui.end()
     

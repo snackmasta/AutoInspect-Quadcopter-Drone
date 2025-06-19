@@ -9,11 +9,9 @@ class TerrainTelemetryPanel(BasePanel):
     
     def draw(self, sim, environment):
         """Draw terrain distance telemetry with SCADA styling."""
-        self.apply_scada_theme()        # Position at bottom left - aligned with mission control panel
-        imgui.set_next_window_position(10, 470)
-        imgui.set_next_window_size(420, 160)
-        
-        imgui.begin("■ TERRAIN TELEMETRY", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+        self.apply_scada_theme()        # Position at bottom left - auto-size to fit content
+        imgui.set_next_window_position(10, 500)
+        imgui.begin("■ TERRAIN TELEMETRY", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
         
         from ..drone_body_box import get_body_box_corners
         

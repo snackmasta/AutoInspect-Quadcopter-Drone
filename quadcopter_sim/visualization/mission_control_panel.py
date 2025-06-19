@@ -14,11 +14,9 @@ class MissionControlPanel(BasePanel):
         
         io = imgui.get_io()
         io.display_size = (self.window_width, self.window_height)
-        
-        # Main control panel - compact to fit screen
+          # Main control panel - auto-size to fit content
         imgui.set_next_window_position(10, 10)
-        imgui.set_next_window_size(420, 450)
-        imgui.begin("■ DRONE CONTROL SYSTEM", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+        imgui.begin("■ DRONE CONTROL SYSTEM", flags=imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
         
         # System status header
         self.draw_section_header("SYSTEM STATUS")
@@ -78,6 +76,21 @@ class MissionControlPanel(BasePanel):
         # Telemetry section
         self.draw_section_header("TELEMETRY DATA")
         self._draw_telemetry(sim)
+        
+        imgui.separator()
+        
+        # Manual control section
+        self.draw_section_header("MANUAL CONTROL")
+        imgui.text("Manual Mode:")
+        imgui.same_line()
+        if sim.manual_mode:
+            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['status_warn'])
+            imgui.text("ENABLED")
+            imgui.pop_style_color()
+        else:
+            imgui.push_style_color(imgui.COLOR_TEXT, *self.colors['status_good'])
+            imgui.text("DISABLED")
+            imgui.pop_style_color()
         
         imgui.separator()
         
