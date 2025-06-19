@@ -232,3 +232,93 @@ This simulator is designed for:
 ## License
 
 [not yet]
+
+## Build Guide
+
+### Building a Standalone Windows Executable
+
+You can build a standalone `.exe` for Windows using PyInstaller. This will bundle all dependencies, custom modules, and debug configuration for portable distribution.
+
+#### 1. Install Requirements
+
+Make sure you have all dependencies installed in your Python environment:
+
+```bash
+pip install -r requirements.txt
+# Or manually:
+pip install numpy scipy OpenGL glfw imgui[opengl] perlin-noise scikit-optimize pyinstaller
+```
+
+#### 2. Build the Executable
+
+From the project root or `examples/` directory, run:
+
+```powershell
+# In PowerShell (Windows)
+cd examples
+pyinstaller QuadcopterSimulation.spec
+```
+
+- The build process uses the `QuacopterSimulation.spec` file to ensure all custom modules, DLLs, and debug configuration are included.
+- The output executable will be in `examples/dist/QuadcopterSimulation.exe`.
+
+#### 3. Run the Executable
+
+```powershell
+cd dist
+./QuadcopterSimulation.exe
+```
+
+#### 4. Troubleshooting
+- If you see missing DLL or import errors, ensure all dependencies are installed and the `debug/` directory is present.
+- The build system uses a robust fallback for debug configuration, so the executable should run even if `debug_config.py` is missing.
+- For advanced debugging, see `quadcopter_sim/debug_utils.py` and `quadcopter_sim/debug_fallback.py`.
+
+#### 5. Customizing the Build
+- Edit `QuacopterSimulation.spec` to add or exclude data files, DLLs, or hidden imports as needed.
+- You can add runtime hooks for custom initialization if your environment changes.
+
+### Step-by-Step Build Commands (Windows)
+
+1. **Open PowerShell** and navigate to your project directory:
+
+```powershell
+cd E:\Obsidian\shigoto\Robotika\scara
+```
+
+2. **(Optional) Activate your virtual environment:**
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+3. **Install all required dependencies:**
+
+```powershell
+pip install -r requirements.txt
+# Or, if you don't have requirements.txt:
+pip install numpy scipy OpenGL glfw imgui[opengl] perlin-noise scikit-optimize pyinstaller
+```
+
+4. **Build the executable using PyInstaller:**
+
+```powershell
+cd examples
+pyinstaller QuadcopterSimulation.spec
+```
+
+5. **Run the generated executable:**
+
+```powershell
+cd dist
+./QuadcopterSimulation.exe
+```
+
+6. **(Optional) Validate debug configuration:**
+
+```powershell
+cd ..\..\quadcopter_sim
+python validate_debug.py
+```
+
+---
